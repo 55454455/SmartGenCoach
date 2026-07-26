@@ -1,0 +1,84 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --background: #f8fafc;
+  --surface: #ffffff;
+  --surface-muted: #f1f5f9;
+  --foreground: #0f172a;
+  --foreground-muted: #64748b;
+  --border: #e2e8f0;
+
+  --accent-dsat: #2563eb;
+  --accent-dsat-soft: #dbeafe;
+  --accent-ap: #dc2626;
+  --accent-ap-soft: #fee2e2;
+  --accent-ielts: #16a34a;
+  --accent-ielts-soft: #dcfce7;
+  --accent-studio: #7c3aed;
+  --accent-studio-soft: #ede9fe;
+
+  /* Per-exam "current context" theme. Pages/layouts override --accent-current(-soft) via
+     useExamTheme() (see lib/hooks/useExamTheme.ts) so chrome shared across exams (TopNav,
+     focus rings) leans into whichever exam the user is currently inside. Defaults to DSAT
+     when no exam context is set, matching the app's previous static DSAT-blue chrome. */
+  --accent-current: var(--accent-dsat);
+  --accent-current-soft: var(--accent-dsat-soft);
+  --accent-current-wash: color-mix(in srgb, var(--accent-current) 6%, var(--background));
+}
+
+.dark {
+  --background: #0b1120;
+  --surface: #111827;
+  --surface-muted: #1e293b;
+  --foreground: #f1f5f9;
+  --foreground-muted: #94a3b8;
+  --border: #263449;
+
+  --accent-dsat: #60a5fa;
+  --accent-dsat-soft: #1e3a5f;
+  --accent-ap: #f87171;
+  --accent-ap-soft: #4c1d1d;
+  --accent-ielts: #4ade80;
+  --accent-ielts-soft: #143d24;
+  --accent-studio: #a78bfa;
+  --accent-studio-soft: #2e1f57;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-foreground: var(--foreground);
+  --color-foreground-muted: var(--foreground-muted);
+  --color-border: var(--border);
+
+  --color-dsat: var(--accent-dsat);
+  --color-dsat-soft: var(--accent-dsat-soft);
+  --color-ap: var(--accent-ap);
+  --color-ap-soft: var(--accent-ap-soft);
+  --color-ielts: var(--accent-ielts);
+  --color-ielts-soft: var(--accent-ielts-soft);
+  --color-studio: var(--accent-studio);
+  --color-studio-soft: var(--accent-studio-soft);
+
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+  transition: background-color 200ms ease, color 200ms ease;
+}
+
+* {
+  scrollbar-width: thin;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent-current);
+  outline-offset: 2px;
+}
