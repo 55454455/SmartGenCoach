@@ -27,6 +27,7 @@ export default function ApExamPage() {
   const studentName = useAuthStore((s) => s.session?.user.name) ?? "Student";
   const [bundle, setBundle] = useState<ApExamBundle | null>(null);
   const [examFinished, setExamFinished] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const resetOnce = useRef(false);
 
   useExamTheme("ap");
@@ -62,8 +63,16 @@ export default function ApExamPage() {
     resetOnce.current = true;
     reset();
     fetch("/api/exam/ap")
-      .then((res) => res.json())
-      .then((data: ApExamBundle) => setBundle(data));
+      .then(async (res) => {
+        const data = (await res.json()) as ApExamBundle | { error: string };
+        if (!res.ok || "error" in data) {
+          throw new Error("error" in data ? data.error : "Could not generate this exam.");
+        }
+        setBundle(data);
+      })
+      .catch((err: unknown) => {
+        setLoadError(err instanceof Error ? err.message : "Could not generate this exam.");
+      });
   }, [reset]);
 
   const currentModule = bundle?.modules[currentModuleIndex];
@@ -126,6 +135,19 @@ export default function ApExamPage() {
           Your responses have been recorded. Full scoring and adaptive feedback will be handled by the Orchestrator Agent
           in Phase 2.
         </p>
+        <Button accent="ap" onClick={() => router.push("/dashboard")}>
+          Back to Dashboard
+        </Button>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="flex h-screen flex-col items-center justify-center gap-4 px-6 text-center">
+        <X size={40} className="text-ap" aria-hidden="true" />
+        <h1 className="text-xl font-semibold text-foreground">Couldn&apos;t load this exam</h1>
+        <p className="max-w-sm text-sm text-foreground-muted">{loadError}</p>
         <Button accent="ap" onClick={() => router.push("/dashboard")}>
           Back to Dashboard
         </Button>

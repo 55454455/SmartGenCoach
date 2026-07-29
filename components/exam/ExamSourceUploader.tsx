@@ -18,6 +18,7 @@ const ACCENT_BORDER: Record<Accent, string> = {
   ap: "border-ap",
   ielts: "border-ielts",
   studio: "border-studio",
+  party: "border-party",
   neutral: "border-foreground",
 };
 const ACCENT_BG_SOFT: Record<Accent, string> = {
@@ -25,6 +26,7 @@ const ACCENT_BG_SOFT: Record<Accent, string> = {
   ap: "bg-ap-soft",
   ielts: "bg-ielts-soft",
   studio: "bg-studio-soft",
+  party: "bg-party-soft",
   neutral: "bg-surface-muted",
 };
 const ACCENT_TEXT: Record<Accent, string> = {
@@ -32,6 +34,7 @@ const ACCENT_TEXT: Record<Accent, string> = {
   ap: "text-ap",
   ielts: "text-ielts",
   studio: "text-studio",
+  party: "text-party",
   neutral: "text-foreground",
 };
 

@@ -1,8 +1,16 @@
 import { NextResponse } from "next/server";
 import { getApExamBundle } from "@/lib/services/examService";
 
-// PHASE2: replace with an Orchestrator Agent call that assembles an adaptive module set per student.
+// Each subject module is a real Claude call (thinking + up to 3 retries) — give it room to finish
+// instead of getting killed by the platform's default serverless timeout.
+export const maxDuration = 60;
+
 export async function GET() {
-  const bundle = await getApExamBundle();
-  return NextResponse.json(bundle);
+  try {
+    const bundle = await getApExamBundle();
+    return NextResponse.json(bundle);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Could not generate this exam.";
+    return NextResponse.json({ error: message }, { status: 502 });
+  }
 }

@@ -18,6 +18,7 @@ const HEADER_ACCENT_BORDER: Record<Accent, string> = {
   ap: "border-b-2 border-b-ap",
   ielts: "border-b-2 border-b-ielts",
   studio: "border-b-2 border-b-studio",
+  party: "border-b-2 border-b-party",
   neutral: "border-b border-border",
 };
 
@@ -26,6 +27,7 @@ const NEXT_BUTTON_ACCENT: Record<Accent, string> = {
   ap: "bg-ap hover:bg-ap/90 text-white",
   ielts: "bg-ielts hover:bg-ielts/90 text-white",
   studio: "bg-studio hover:bg-studio/90 text-white",
+  party: "bg-party hover:bg-party/90 text-white",
   neutral: "bg-foreground hover:bg-foreground/90 text-background",
 };
 

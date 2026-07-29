@@ -3,6 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { UPLOADED_EXAMS } from "@/lib/mockData";
 import type { AnswerChoice, ExamModule, ExamType, Question, SkillDomain, UploadedExam } from "@/lib/types";
 import { containsReasoningLeak } from "./aiTextSafety";
+import { describeAnthropicError } from "./anthropicErrors";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -276,19 +277,27 @@ async function extractFromDocument(examType: ExamType, base64Data: string, media
 
   let lastError: unknown;
   for (let attempt = 0; attempt < 3; attempt++) {
-    const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 8192,
-      thinking: { type: "adaptive" },
-      tools: [buildExtractTool(examType)],
-      tool_choice: { type: "tool", name: "extract_exam_questions" },
-      messages: [
-        {
-          role: "user",
-          content: [documentBlock, { type: "text", text: `This is a ${examType} test paper. ${EXTRACTION_INSTRUCTIONS}` }],
-        },
-      ],
-    });
+    let response: Awaited<ReturnType<typeof anthropic.messages.create>>;
+    try {
+      response = await anthropic.messages.create({
+        model: "claude-sonnet-4-6",
+        max_tokens: 8192,
+        thinking: { type: "adaptive" },
+        tools: [buildExtractTool(examType)],
+        tool_choice: { type: "tool", name: "extract_exam_questions" },
+        messages: [
+          {
+            role: "user",
+            content: [documentBlock, { type: "text", text: `This is a ${examType} test paper. ${EXTRACTION_INSTRUCTIONS}` }],
+          },
+        ],
+      });
+    } catch (err) {
+      const { message, retryable } = describeAnthropicError(err);
+      lastError = new Error(message);
+      if (!retryable) break;
+      continue;
+    }
 
     const toolUse = response.content.find((block) => block.type === "tool_use");
     if (!toolUse || toolUse.type !== "tool_use") {
@@ -307,19 +316,27 @@ async function extractFromDocument(examType: ExamType, base64Data: string, media
 async function extractFromText(examType: ExamType, text: string): Promise<ExtractionResult> {
   let lastError: unknown;
   for (let attempt = 0; attempt < 3; attempt++) {
-    const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 8192,
-      thinking: { type: "adaptive" },
-      tools: [buildExtractTool(examType)],
-      tool_choice: { type: "tool", name: "extract_exam_questions" },
-      messages: [
-        {
-          role: "user",
-          content: `This is the text content of a webpage that may contain a ${examType} practice test. ${EXTRACTION_INSTRUCTIONS}\n\n---\n\n${text}`,
-        },
-      ],
-    });
+    let response: Awaited<ReturnType<typeof anthropic.messages.create>>;
+    try {
+      response = await anthropic.messages.create({
+        model: "claude-sonnet-4-6",
+        max_tokens: 8192,
+        thinking: { type: "adaptive" },
+        tools: [buildExtractTool(examType)],
+        tool_choice: { type: "tool", name: "extract_exam_questions" },
+        messages: [
+          {
+            role: "user",
+            content: `This is the text content of a webpage that may contain a ${examType} practice test. ${EXTRACTION_INSTRUCTIONS}\n\n---\n\n${text}`,
+          },
+        ],
+      });
+    } catch (err) {
+      const { message, retryable } = describeAnthropicError(err);
+      lastError = new Error(message);
+      if (!retryable) break;
+      continue;
+    }
 
     const toolUse = response.content.find((block) => block.type === "tool_use");
     if (!toolUse || toolUse.type !== "tool_use") {

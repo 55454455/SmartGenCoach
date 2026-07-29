@@ -27,7 +27,10 @@ export default function DsatExamPage() {
   const studentName = useAuthStore((s) => s.session?.user.name) ?? "Student";
   const [bundle, setBundle] = useState<DsatExamBundle | null>(null);
   const [examFinished, setExamFinished] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [moduleTransitionLoading, setModuleTransitionLoading] = useState(false);
   const resetOnce = useRef(false);
+  const advancingRef = useRef(false);
 
   useExamTheme("dsat");
 
@@ -62,8 +65,16 @@ export default function DsatExamPage() {
     resetOnce.current = true;
     reset();
     fetch("/api/exam/dsat")
-      .then((res) => res.json())
-      .then((data: DsatExamBundle) => setBundle(data));
+      .then(async (res) => {
+        const data = (await res.json()) as DsatExamBundle | { error: string };
+        if (!res.ok || "error" in data) {
+          throw new Error("error" in data ? data.error : "Could not generate this exam.");
+        }
+        setBundle(data);
+      })
+      .catch((err: unknown) => {
+        setLoadError(err instanceof Error ? err.message : "Could not generate this exam.");
+      });
   }, [reset]);
 
   const currentModule = bundle?.modules[currentModuleIndex];
@@ -77,17 +88,60 @@ export default function DsatExamPage() {
     setExamFinished(true);
   };
 
+  // Module 2 for each domain starts as an empty placeholder (see getDsatExamBundle) — its real,
+  // difficulty-adjusted content is fetched here, right as the student finishes Module 1 for that
+  // domain, using their own Module 1 score to pick Module 2's difficulty.
+  const advanceToModule = async (nextIndex: number) => {
+    if (advancingRef.current || !bundle) return;
+    const nextModule = bundle.modules[nextIndex];
+    if (nextModule && nextModule.questionIds.length === 0 && (nextModule.domain === "Math" || nextModule.domain === "Reading and Writing")) {
+      advancingRef.current = true;
+      setModuleTransitionLoading(true);
+      const priorModule = bundle.modules[nextIndex - 1];
+      const total = priorModule?.questionIds.length ?? 0;
+      const correctCount = (priorModule?.questionIds ?? []).filter(
+        (qid) => answers[qid] && answers[qid] === bundle.questionsById[qid]?.correctChoiceId,
+      ).length;
+
+      try {
+        const res = await fetch("/api/exam/dsat/adaptive-module", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ domain: nextModule.domain, correctCount, total }),
+        });
+        const data = (await res.json()) as
+          | { module: DsatExamBundle["modules"][number]; questionsById: DsatExamBundle["questionsById"] }
+          | { error: string };
+        if (!res.ok || "error" in data) {
+          throw new Error("error" in data ? data.error : "Could not generate the next module.");
+        }
+        setBundle({
+          modules: bundle.modules.map((m, i) => (i === nextIndex ? data.module : m)),
+          questionsById: { ...bundle.questionsById, ...data.questionsById },
+        });
+      } catch (err) {
+        setLoadError(err instanceof Error ? err.message : "Could not generate the next module.");
+        advancingRef.current = false;
+        setModuleTransitionLoading(false);
+        return;
+      }
+      advancingRef.current = false;
+      setModuleTransitionLoading(false);
+    }
+    advanceModule();
+  };
+
   const handleExpire = () => {
     if (isLastModule) {
       finishExam();
     } else {
-      advanceModule();
+      void advanceToModule(currentModuleIndex + 1);
     }
   };
 
   const { formatted: timerFormatted } = useCountdown(currentModule?.durationSeconds ?? 0, {
     onExpire: handleExpire,
-    paused: !currentModule || examFinished,
+    paused: !currentModule || examFinished || moduleTransitionLoading,
   });
 
   const navigatorItems = useMemo(
@@ -108,7 +162,7 @@ export default function DsatExamPage() {
       if (isLastModule) {
         finishExam();
       } else {
-        advanceModule();
+        void advanceToModule(currentModuleIndex + 1);
       }
     } else {
       nextQuestion(currentModule.questionIds.length);
@@ -129,6 +183,27 @@ export default function DsatExamPage() {
         <Button accent="dsat" onClick={() => router.push("/dashboard")}>
           Back to Dashboard
         </Button>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="flex h-screen flex-col items-center justify-center gap-4 px-6 text-center">
+        <X size={40} className="text-dsat" aria-hidden="true" />
+        <h1 className="text-xl font-semibold text-foreground">Couldn&apos;t load this exam</h1>
+        <p className="max-w-sm text-sm text-foreground-muted">{loadError}</p>
+        <Button accent="dsat" onClick={() => router.push("/dashboard")}>
+          Back to Dashboard
+        </Button>
+      </div>
+    );
+  }
+
+  if (moduleTransitionLoading) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <Spinner label="Preparing your next module…" />
       </div>
     );
   }

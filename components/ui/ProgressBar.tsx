@@ -16,6 +16,7 @@ const ACCENT_BG: Record<Accent, string> = {
   ap: "bg-ap",
   ielts: "bg-ielts",
   studio: "bg-studio",
+  party: "bg-party",
   neutral: "bg-foreground",
 };
 

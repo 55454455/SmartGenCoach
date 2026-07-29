@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { getUserTests, uploadDocument } from "@/lib/services/smartStudioService";
 
+// Same reasoning as app/api/exam/upload/route.ts — document extraction is a real, potentially
+// slow Claude call and must not be killed by the platform's default function timeout.
+export const maxDuration = 60;
+
 export async function GET() {
   const tests = await getUserTests();
   return NextResponse.json(tests);

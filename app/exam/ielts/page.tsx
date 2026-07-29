@@ -279,14 +279,25 @@ function ListeningSection() {
 
 function ReadingWritingSection({ domain }: { domain: "Reading" | "Writing" }) {
   const [questions, setQuestions] = useState<Question[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     setQuestions(null);
+    setLoadError(null);
     fetch(`/api/exam/ielts?section=${domain}`)
-      .then((res) => res.json())
-      .then((data: { questions: Question[] }) => setQuestions(data.questions));
+      .then(async (res) => {
+        const data = (await res.json()) as { questions: Question[] } | { error: string };
+        if (!res.ok || "error" in data) {
+          throw new Error("error" in data ? data.error : `Could not generate the ${domain} section.`);
+        }
+        setQuestions(data.questions);
+      })
+      .catch((err: unknown) => {
+        setLoadError(err instanceof Error ? err.message : `Could not generate the ${domain} section.`);
+      });
   }, [domain]);
 
+  if (loadError) return <p className="py-16 text-center text-foreground-muted">{loadError}</p>;
   if (!questions) return <Spinner label={`Loading ${domain.toLowerCase()} section…`} />;
 
   return <SkillPracticeQuiz title={`IELTS ${domain}`} questions={questions} accent="ielts" />;

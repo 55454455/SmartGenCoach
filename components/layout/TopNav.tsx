@@ -9,6 +9,7 @@ import {
   Menu,
   ShieldCheck,
   Sparkles,
+  Swords,
   Target,
   X,
 } from "lucide-react";
@@ -24,6 +25,7 @@ const NAV_LINKS = [
   { href: "/select-exam", label: "Select Exam", icon: GraduationCap },
   { href: "/killing-questions", label: "Killing Questions", icon: Target },
   { href: "/smart-studio", label: "Smart Studio", icon: Sparkles },
+  { href: "/lets-play", label: "Let's Play", icon: Swords },
 ];
 
 const ADMIN_LINK = { href: "/admin", label: "Admin", icon: ShieldCheck };

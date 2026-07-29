@@ -6,6 +6,12 @@ import {
 } from "@/lib/services/uploadedExamService";
 import type { ExamType } from "@/lib/types";
 
+// Extraction runs a real Claude call (with thinking + up to 3 retries) against an uploaded
+// PDF/image and can take well past Vercel's default serverless timeout (10s on Hobby). Raise it
+// to the Hobby-plan max so uploads don't get killed mid-request; Pro/Enterprise projects can raise
+// this further if needed.
+export const maxDuration = 60;
+
 export async function GET(request: Request) {
   const examType = new URL(request.url).searchParams.get("examType") as ExamType | null;
   const exams = await getUploadedExams(examType ?? undefined);

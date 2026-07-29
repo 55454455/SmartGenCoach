@@ -16,17 +16,27 @@ function PracticeContent() {
   const examType = searchParams.get("exam") as ExamType | null;
   const domains = searchParams.getAll("domain");
   const [questions, setQuestions] = useState<Question[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useExamTheme(examType ? accentForExam(examType) : null);
 
   useEffect(() => {
     if (!examType || domains.length === 0) return;
     setQuestions(null);
+    setLoadError(null);
     const params = new URLSearchParams({ examType });
     domains.forEach((domain) => params.append("domain", domain));
     fetch(`/api/exam/questions?${params.toString()}`)
-      .then((res) => res.json())
-      .then((data: { questions: Question[] }) => setQuestions(data.questions));
+      .then(async (res) => {
+        const data = (await res.json()) as { questions: Question[] } | { error: string };
+        if (!res.ok || "error" in data) {
+          throw new Error("error" in data ? data.error : "Could not generate practice questions.");
+        }
+        setQuestions(data.questions);
+      })
+      .catch((err: unknown) => {
+        setLoadError(err instanceof Error ? err.message : "Could not generate practice questions.");
+      });
   }, [examType, domains.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!examType || domains.length === 0) {
@@ -35,6 +45,17 @@ function PracticeContent() {
         <p className="text-foreground-muted">No exam or domain was specified.</p>
         <Button accent="neutral" onClick={() => router.push("/select-exam")}>
           Choose a skill to practice
+        </Button>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="flex flex-col items-center gap-4 py-16 text-center">
+        <p className="text-foreground-muted">{loadError}</p>
+        <Button accent="neutral" onClick={() => router.push("/select-exam")}>
+          Back to exam picker
         </Button>
       </div>
     );

@@ -9,6 +9,10 @@ function isIeltsDomain(value: string): value is IeltsDomain {
 }
 
 // PHASE2: Listening audio + Speaking prompts are generated per-student by the relevant agent.
+// Reading/Writing questions are already a real Claude call (thinking + up to 3 retries) — give the
+// route room to finish instead of getting killed by the platform's default serverless timeout.
+export const maxDuration = 60;
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const section = searchParams.get("section") ?? "Listening";
@@ -17,16 +21,21 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Invalid section." }, { status: 400 });
   }
 
-  if (section === "Listening") {
-    const bundle = await getIeltsListeningBundle();
-    return NextResponse.json({ section, ...bundle });
-  }
+  try {
+    if (section === "Listening") {
+      const bundle = await getIeltsListeningBundle();
+      return NextResponse.json({ section, ...bundle });
+    }
 
-  if (section === "Speaking") {
-    const prompts = await getIeltsSpeakingPrompts();
-    return NextResponse.json({ section, prompts });
-  }
+    if (section === "Speaking") {
+      const prompts = await getIeltsSpeakingPrompts();
+      return NextResponse.json({ section, prompts });
+    }
 
-  const questions = await getQuestionsByDomain("IELTS", section);
-  return NextResponse.json({ section, questions });
+    const questions = await getQuestionsByDomain("IELTS", section);
+    return NextResponse.json({ section, questions });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Could not generate this section.";
+    return NextResponse.json({ error: message }, { status: 502 });
+  }
 }

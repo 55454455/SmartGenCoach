@@ -15,6 +15,7 @@ const ACCENT_BG: Record<Accent, string> = {
   ap: "bg-ap hover:bg-ap/90 text-white",
   ielts: "bg-ielts hover:bg-ielts/90 text-white",
   studio: "bg-studio hover:bg-studio/90 text-white",
+  party: "bg-party hover:bg-party/90 text-white",
   neutral: "bg-foreground hover:bg-foreground/90 text-background",
 };
 
@@ -23,6 +24,7 @@ const ACCENT_OUTLINE: Record<Accent, string> = {
   ap: "border-ap text-ap hover:bg-ap-soft",
   ielts: "border-ielts text-ielts hover:bg-ielts-soft",
   studio: "border-studio text-studio hover:bg-studio-soft",
+  party: "border-party text-party hover:bg-party-soft",
   neutral: "border-border text-foreground hover:bg-surface-muted",
 };
 

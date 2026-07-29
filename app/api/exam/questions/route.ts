@@ -22,11 +22,18 @@ function isSkillDomain(value: string): value is SkillDomain {
   return (VALID_DOMAINS as string[]).includes(value);
 }
 
-// PHASE2: skill-practice sets are generated fresh per student by the relevant subject agent.
+// Skill-practice sets are real Claude calls (thinking + up to 3 retries) — give them room to
+// finish instead of getting killed by the platform's default serverless timeout.
+export const maxDuration = 60;
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const examType = searchParams.get("examType");
   const domains = searchParams.getAll("domain");
+  const countParam = searchParams.get("count");
+  // Only Let's Play passes this today, to size a trivia room's question set independent of the
+  // default Skill Practice count; clamp defensively since it drives how many parallel Claude calls fire.
+  const count = countParam ? Math.min(Math.max(parseInt(countParam, 10) || 6, 1), 20) : undefined;
 
   if (!examType || !isExamType(examType)) {
     return NextResponse.json({ error: "Invalid or missing examType." }, { status: 400 });
@@ -35,6 +42,13 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Invalid or missing domain." }, { status: 400 });
   }
 
-  const questionSets = await Promise.all(domains.map((domain) => getQuestionsByDomain(examType, domain)));
-  return NextResponse.json({ questions: questionSets.flat() });
+  try {
+    const questionSets = await Promise.all(
+      domains.map((domain) => (count ? getQuestionsByDomain(examType, domain, count) : getQuestionsByDomain(examType, domain))),
+    );
+    return NextResponse.json({ questions: questionSets.flat() });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Could not generate practice questions.";
+    return NextResponse.json({ error: message }, { status: 502 });
+  }
 }

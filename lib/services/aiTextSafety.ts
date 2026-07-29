@@ -12,6 +12,7 @@ const LEAK_PATTERNS: RegExp[] = [
   /\blet me (re-?examine|re-?check|recheck|reconsider|verify|double-?check)/i,
   /\blet'?s (verify|re-?examine|recheck|double-?check|check)/i,
   /\bre-?checking\b/i,
+  /\bre-?examining\b/i,
   /\bdouble-?check(ing)?\b/i,
   /\bactually,? (the|it|wait|no|let)/i,
   /\bon second thought\b/i,
@@ -21,6 +22,22 @@ const LEAK_PATTERNS: RegExp[] = [
   /\.\.\.\s*(wait|actually|let me|hmm)/i,
   /\bi (was|made) (wrong|a mistake|an error)\b/i,
   /\bcorrecting myself\b/i,
+  // Trial-and-error / guess-and-check scratch work, most common in generated math questions where
+  // the model solves forward, gets an unclean number, and starts guessing values live in the text
+  // instead of silently discarding the attempt and starting over (see examQuestionGenerator.ts).
+  /\bnot clean\b/i,
+  /\bisn'?t clean\b/i,
+  /\bredesign(ing|ed)?\b/i,
+  /\btrying [a-z]\s*=/i,
+  /\btarget (x|y|z|answer|value)\b/i,
+  /\bverified clean\b/i,
+  /\bchoosing [a-z]\s*=/i,
+  /\bto make [a-z]\s*=.{0,20}correct\b/i,
+  /\buse [a-z]\s*=\s*-?\d+,\s*[a-z]\s*=\s*-?\d+/i,
+  /≠/,
+  /\bthat('s| is) not\b/i,
+  /\bdoesn'?t (match|work)\b/i,
+  /\bdon'?t match\b/i,
 ];
 
 export function containsReasoningLeak(text: string | undefined | null): boolean {

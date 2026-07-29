@@ -3,6 +3,7 @@ import { SMART_STUDIO_TESTS } from "@/lib/mockData";
 import type { AnswerChoice, SmartStudioGradedResult, SmartStudioQuestion, SmartStudioTest } from "@/lib/types";
 import { simulateLatency } from "./simulateLatency";
 import { containsReasoningLeak } from "./aiTextSafety";
+import { describeAnthropicError } from "./anthropicErrors";
 
 export interface UploadDocumentInput {
   fileName: string;
@@ -114,32 +115,40 @@ async function extractQuestionsFromDocument(base64Data: string, mediaType: strin
 
   let lastError: unknown;
   for (let attempt = 0; attempt < 3; attempt++) {
-    const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 8192,
-      thinking: { type: "adaptive" },
-      tools: [EXTRACT_QUESTIONS_TOOL],
-      tool_choice: { type: "tool", name: "extract_questions" },
-      messages: [
-        {
-          role: "user",
-          content: [
-            documentBlock,
-            {
-              type: "text",
-              text:
-                "This is a test or practice paper. Find every multiple-choice question in it and extract it via the " +
-                "extract_questions tool. Transcribe the question prompt, any shared passage, and every answer choice " +
-                "verbatim, exactly as printed in the document — do not paraphrase or alter any wording or values, even " +
-                "if a choice looks like a typo or seems mathematically inconsistent. Work out the correct answer " +
-                "yourself through careful reasoning (even if no answer key is shown), but keep that reasoning private " +
-                "and only report the final, clean explanation — never include hedging, self-correction, or 'wait, let " +
-                "me reconsider' language in the output.",
-            },
-          ],
-        },
-      ],
-    });
+    let response: Awaited<ReturnType<typeof anthropic.messages.create>>;
+    try {
+      response = await anthropic.messages.create({
+        model: "claude-sonnet-4-6",
+        max_tokens: 8192,
+        thinking: { type: "adaptive" },
+        tools: [EXTRACT_QUESTIONS_TOOL],
+        tool_choice: { type: "tool", name: "extract_questions" },
+        messages: [
+          {
+            role: "user",
+            content: [
+              documentBlock,
+              {
+                type: "text",
+                text:
+                  "This is a test or practice paper. Find every multiple-choice question in it and extract it via the " +
+                  "extract_questions tool. Transcribe the question prompt, any shared passage, and every answer choice " +
+                  "verbatim, exactly as printed in the document — do not paraphrase or alter any wording or values, even " +
+                  "if a choice looks like a typo or seems mathematically inconsistent. Work out the correct answer " +
+                  "yourself through careful reasoning (even if no answer key is shown), but keep that reasoning private " +
+                  "and only report the final, clean explanation — never include hedging, self-correction, or 'wait, let " +
+                  "me reconsider' language in the output.",
+              },
+            ],
+          },
+        ],
+      });
+    } catch (err) {
+      const { message, retryable } = describeAnthropicError(err);
+      lastError = new Error(message);
+      if (!retryable) break;
+      continue;
+    }
 
     const toolUse = response.content.find((block) => block.type === "tool_use");
     if (!toolUse || toolUse.type !== "tool_use") {

@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import { getKillingQuestions } from "@/lib/services/killingQuestionsService";
 import type { ExamType } from "@/lib/types";
 
+// Question generation is a real Claude call (with thinking + up to 3 retries) — give it room to
+// finish instead of getting killed by the platform's default serverless timeout.
+export const maxDuration = 60;
+
 const VALID_EXAM_TYPES: ExamType[] = ["DSAT", "AP", "IELTS"];
 
 function isExamType(value: string): value is ExamType {

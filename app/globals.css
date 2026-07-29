@@ -18,6 +18,8 @@
   --accent-ielts-soft: #dcfce7;
   --accent-studio: #7c3aed;
   --accent-studio-soft: #ede9fe;
+  --accent-party: #ea580c;
+  --accent-party-soft: #ffedd5;
 
   /* Per-exam "current context" theme. Pages/layouts override --accent-current(-soft) via
      useExamTheme() (see lib/hooks/useExamTheme.ts) so chrome shared across exams (TopNav,
@@ -44,6 +46,8 @@
   --accent-ielts-soft: #143d24;
   --accent-studio: #a78bfa;
   --accent-studio-soft: #2e1f57;
+  --accent-party: #fb923c;
+  --accent-party-soft: #4a2a10;
 }
 
 @theme inline {
@@ -62,6 +66,8 @@
   --color-ielts-soft: var(--accent-ielts-soft);
   --color-studio: var(--accent-studio);
   --color-studio-soft: var(--accent-studio-soft);
+  --color-party: var(--accent-party);
+  --color-party-soft: var(--accent-party-soft);
 
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);

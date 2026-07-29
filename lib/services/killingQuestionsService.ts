@@ -3,6 +3,7 @@ import type { AnswerChoice, Question, SkillScore, TargetedQuestion } from "@/lib
 import type { ExamType } from "@/lib/types";
 import { getReadinessReport } from "./readinessService";
 import { questionHasReasoningLeak } from "./aiTextSafety";
+import { describeAnthropicError } from "./anthropicErrors";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -111,26 +112,34 @@ async function generateQuestionsForSkills(
 
   let lastError: unknown;
   for (let attempt = 0; attempt < 3; attempt++) {
-    const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 8192,
-      thinking: { type: "adaptive" },
-      tools: [GENERATE_TOOL],
-      tool_choice: { type: "tool", name: "generate_practice_questions" },
-      messages: [
-        {
-          role: "user",
-          content:
-            `Generate targeted ${examType} practice questions for a student's weakest skills. For each skill below, ` +
-            `write brand-new multiple-choice questions (never copied from a known test) that isolate exactly that ` +
-            `sub-skill, at a difficulty appropriate for someone who has been missing questions on it. Work out each ` +
-            `question and its answer choices carefully yourself first, but keep that work private: report only the ` +
-            `final, clean question, answer choices, and explanation — never include hedging, self-correction, or ` +
-            `visible scratch work like "wait" or "..." in any field, and double-check that correctChoiceIndex and the ` +
-            `explanation agree with each other before answering.\n\n${skillBrief}`,
-        },
-      ],
-    });
+    let response: Awaited<ReturnType<typeof anthropic.messages.create>>;
+    try {
+      response = await anthropic.messages.create({
+        model: "claude-sonnet-4-6",
+        max_tokens: 8192,
+        thinking: { type: "adaptive" },
+        tools: [GENERATE_TOOL],
+        tool_choice: { type: "tool", name: "generate_practice_questions" },
+        messages: [
+          {
+            role: "user",
+            content:
+              `Generate targeted ${examType} practice questions for a student's weakest skills. For each skill below, ` +
+              `write brand-new multiple-choice questions (never copied from a known test) that isolate exactly that ` +
+              `sub-skill, at a difficulty appropriate for someone who has been missing questions on it. Work out each ` +
+              `question and its answer choices carefully yourself first, but keep that work private: report only the ` +
+              `final, clean question, answer choices, and explanation — never include hedging, self-correction, or ` +
+              `visible scratch work like "wait" or "..." in any field, and double-check that correctChoiceIndex and the ` +
+              `explanation agree with each other before answering.\n\n${skillBrief}`,
+          },
+        ],
+      });
+    } catch (err) {
+      const { message, retryable } = describeAnthropicError(err);
+      lastError = new Error(message);
+      if (!retryable) break;
+      continue;
+    }
 
     const toolUse = response.content.find((block) => block.type === "tool_use");
     if (!toolUse || toolUse.type !== "tool_use") {

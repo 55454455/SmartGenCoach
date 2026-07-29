@@ -18,6 +18,7 @@ const ACCENT_STROKE: Record<Accent, string> = {
   ap: "var(--accent-ap)",
   ielts: "var(--accent-ielts)",
   studio: "var(--accent-studio)",
+  party: "var(--accent-party)",
   neutral: "var(--foreground)",
 };
 

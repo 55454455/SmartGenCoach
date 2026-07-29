@@ -43,3 +43,6 @@ next-env.d.ts
 # Claude Code local tooling config (machine-specific, not for the shared repo)
 .claude/settings.local.json
 .claude/launch.json
+
+# Playwright MCP local test artifacts (console logs, page snapshots) — not for the shared repo
+.playwright-mcp/

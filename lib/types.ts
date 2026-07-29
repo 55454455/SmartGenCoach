@@ -98,6 +98,12 @@ export interface Question {
   correctChoiceId: string;
   difficulty: Difficulty;
   explanation: string;
+  /** e.g. "DSAT · Math" — a display-friendly grouping label, used by Let's Play's category badge. */
+  category?: string;
+  /** A short, category-tailored pattern/mental-trick/reading-skill tip, revealed alongside the
+   *  correct answer. Populated by generateExamQuestions(); optional so older static question data
+   *  (mockData.ts) stays valid without a migration. */
+  tip?: string;
 }
 
 /** Drives the DSAT/AP module timers and the IELTS Listening/Reading sections. */
@@ -203,4 +209,49 @@ export interface UploadedExam {
   uploadedAt: string; // ISO timestamp
   modules: ExamModule[];
   questionsById: Record<string, Question>;
+}
+
+// ---------------------------------------------------------------------------
+// Let's Play — real-time multiplayer trivia (Supabase Postgres + Realtime backed)
+// ---------------------------------------------------------------------------
+
+export type LetsPlayStatus = "lobby" | "active" | "reveal" | "finished";
+
+/** Mirrors a row in public.lets_play_rooms (see supabase/lets_play_schema.sql). */
+export interface LetsPlayRoom {
+  id: string;
+  code: string;
+  hostId: string;
+  examType: ExamType;
+  domain: SkillDomain;
+  questions: Question[];
+  status: LetsPlayStatus;
+  currentQuestionIndex: number;
+  currentQuestionId: string | null;
+  currentQuestionWinner: string | null;
+  currentQuestionStartedAt: string | null; // ISO timestamp
+  createdAt: string; // ISO timestamp
+}
+
+/** Mirrors a row in public.lets_play_players. */
+export interface LetsPlayPlayer {
+  id: string;
+  roomId: string;
+  userId: string;
+  name: string;
+  avatarInitials: string;
+  score: number;
+  joinedAt: string; // ISO timestamp
+}
+
+/** Mirrors a row in public.lets_play_answers — the live "who answered" feed for the current question. */
+export interface LetsPlayAnswer {
+  id: string;
+  roomId: string;
+  questionId: string;
+  userId: string;
+  choiceId: string;
+  isCorrect: boolean;
+  points: number;
+  answeredAt: string; // ISO timestamp
 }

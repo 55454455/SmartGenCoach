@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { ASK_AI_AGENT_NAME } from "./askAiConstants";
+import { describeAnthropicError } from "./anthropicErrors";
 
 export { ASK_AI_AGENT_NAME };
 
@@ -27,18 +28,23 @@ const SYSTEM_PROMPT =
 export async function askQuestion(question: string, history: AskAiHistoryMessage[] = []): Promise<AskAiAnswer> {
   const trimmed = question.trim();
 
-  const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 500,
-    system: SYSTEM_PROMPT,
-    messages: [
-      ...history.map((m) => ({
-        role: m.role === "agent" ? ("assistant" as const) : ("user" as const),
-        content: m.content,
-      })),
-      { role: "user" as const, content: trimmed },
-    ],
-  });
+  let response: Awaited<ReturnType<typeof anthropic.messages.create>>;
+  try {
+    response = await anthropic.messages.create({
+      model: "claude-sonnet-4-6",
+      max_tokens: 500,
+      system: SYSTEM_PROMPT,
+      messages: [
+        ...history.map((m) => ({
+          role: m.role === "agent" ? ("assistant" as const) : ("user" as const),
+          content: m.content,
+        })),
+        { role: "user" as const, content: trimmed },
+      ],
+    });
+  } catch (err) {
+    throw new Error(describeAnthropicError(err).message);
+  }
 
   const content =
     response.content.find((block) => block.type === "text")?.text ??

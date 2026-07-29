@@ -22,6 +22,7 @@ const TAB_ACCENT_CLASSES: Record<Accent, string> = {
   ap: "bg-ap-soft text-ap",
   ielts: "bg-ielts-soft text-ielts",
   studio: "bg-studio-soft text-studio",
+  party: "bg-party-soft text-party",
   neutral: "bg-surface-muted text-foreground",
 };
 
