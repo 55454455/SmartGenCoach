@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
 import { useCountdown } from "@/hooks/useCountdown";
 import { useExamTheme } from "@/hooks/useExamTheme";
+import { useResetOnKeyChange } from "@/hooks/useResetOnKeyChange";
 import { useSpeakingRecorder } from "@/hooks/useSpeakingRecorder";
 import type { IeltsListeningBundle } from "@/lib/services/examService";
 import type { IeltsDomain, Question, SpeakingPrompt } from "@/lib/types";
@@ -63,7 +64,7 @@ function ListeningSection() {
   const [elapsed, setElapsed] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [unsupported, setUnsupported] = useState(false);
+  const [unsupported] = useState(() => typeof window === "undefined" || !("speechSynthesis" in window));
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const keepAliveRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const voicesRef = useRef<SpeechSynthesisVoice[]>([]);
@@ -75,10 +76,7 @@ function ListeningSection() {
   }, []);
 
   useEffect(() => {
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
-      setUnsupported(true);
-      return;
-    }
+    if (unsupported) return;
     const loadVoices = () => {
       voicesRef.current = window.speechSynthesis.getVoices();
     };
@@ -87,7 +85,7 @@ function ListeningSection() {
     return () => {
       window.speechSynthesis.cancel();
     };
-  }, []);
+  }, [unsupported]);
 
   const clearTimer = () => {
     if (intervalRef.current) {
@@ -281,9 +279,12 @@ function ReadingWritingSection({ domain }: { domain: "Reading" | "Writing" }) {
   const [questions, setQuestions] = useState<Question[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  useEffect(() => {
+  useResetOnKeyChange(domain, () => {
     setQuestions(null);
     setLoadError(null);
+  });
+
+  useEffect(() => {
     fetch(`/api/exam/ielts?section=${domain}`)
       .then(async (res) => {
         const data = (await res.json()) as { questions: Question[] } | { error: string };
@@ -317,8 +318,9 @@ function SpeakingSection() {
   const prompt = prompts?.[partIndex];
   const recorder = useSpeakingRecorder(prompt?.speakSeconds ?? 30);
 
+  useResetOnKeyChange(partIndex, () => setPrepping((prompt?.prepSeconds ?? 0) > 0));
+
   useEffect(() => {
-    setPrepping((prompt?.prepSeconds ?? 0) > 0);
     recorder.reset();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [partIndex]);

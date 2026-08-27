@@ -10,6 +10,7 @@ import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
 import { ProgressRing } from "@/components/ui/ProgressRing";
 import { Spinner } from "@/components/ui/Spinner";
 import { useExamTheme } from "@/hooks/useExamTheme";
+import { useResetOnKeyChange } from "@/hooks/useResetOnKeyChange";
 import type { KillingQuestionsResult } from "@/lib/services/killingQuestionsService";
 import type { ExamType } from "@/lib/types";
 import { accentForExam, type Accent } from "@/lib/utils/accent";
@@ -170,10 +171,13 @@ export default function KillingQuestionsPage() {
   const [result, setResult] = useState<KillingQuestionsResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let active = true;
+  useResetOnKeyChange(examType, () => {
     setResult(null);
     setError(null);
+  });
+
+  useEffect(() => {
+    let active = true;
     fetch(`/api/killing-questions?examType=${examType}`)
       .then((res) => res.json())
       .then((data: KillingQuestionsResult | { error: string }) => {
