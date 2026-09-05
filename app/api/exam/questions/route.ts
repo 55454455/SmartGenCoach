@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireSession } from "@/lib/services/apiAuth";
 import { getQuestionsByDomain } from "@/lib/services/examService";
 import type { ExamType, SkillDomain } from "@/lib/types";
 
@@ -27,6 +28,9 @@ function isSkillDomain(value: string): value is SkillDomain {
 export const maxDuration = 60;
 
 export async function GET(request: Request) {
+  const auth = await requireSession();
+  if (auth.response) return auth.response;
+
   const { searchParams } = new URL(request.url);
   const examType = searchParams.get("examType");
   const domains = searchParams.getAll("domain");

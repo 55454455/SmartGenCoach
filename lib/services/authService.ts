@@ -28,9 +28,20 @@ function toAuthSession(user: UserProfile, session: { access_token: string; expir
   };
 }
 
+// Supabase's client only returns `{ error }` for auth-level failures (wrong password, etc.) —
+// a network-level failure (the project unreachable, DNS, a timeout) throws instead, and would
+// otherwise surface to the user as a raw message like "fetch failed".
+async function guardNetwork<T>(promise: Promise<T>): Promise<T> {
+  try {
+    return await promise;
+  } catch {
+    throw new Error("Could not reach the authentication service. Please try again in a moment.");
+  }
+}
+
 export async function login(credentials: LoginCredentials): Promise<AuthSession> {
   const supabase = await createClient();
-  const { data, error } = await supabase.auth.signInWithPassword(credentials);
+  const { data, error } = await guardNetwork(supabase.auth.signInWithPassword(credentials));
   if (error || !data.session || !data.user) {
     throw new Error("Incorrect email or password.");
   }
@@ -40,11 +51,13 @@ export async function login(credentials: LoginCredentials): Promise<AuthSession>
 
 export async function register(input: RegisterInput): Promise<AuthSession> {
   const supabase = await createClient();
-  const { data, error } = await supabase.auth.signUp({
-    email: input.email,
-    password: input.password,
-    options: { data: { name: input.name } },
-  });
+  const { data, error } = await guardNetwork(
+    supabase.auth.signUp({
+      email: input.email,
+      password: input.password,
+      options: { data: { name: input.name } },
+    }),
+  );
   if (error) {
     throw new Error(error.message);
   }

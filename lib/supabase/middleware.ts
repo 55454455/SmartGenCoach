@@ -8,6 +8,7 @@ const PROTECTED_PREFIXES = [
   "/smart-studio",
   "/admin",
   "/exam",
+  "/lets-play",
 ];
 
 export async function updateSession(request: NextRequest) {

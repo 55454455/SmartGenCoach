@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server";
+import { requireSession } from "@/lib/services/apiAuth";
 import { askQuestion, type AskAiHistoryMessage } from "@/lib/services/askAiService";
 
 export const maxDuration = 30;
 
 export async function POST(request: Request) {
+  const auth = await requireSession();
+  if (auth.response) return auth.response;
+
   const body = (await request.json()) as { question?: string; history?: AskAiHistoryMessage[] };
   if (!body.question || !body.question.trim()) {
     return NextResponse.json({ error: "A question is required." }, { status: 400 });

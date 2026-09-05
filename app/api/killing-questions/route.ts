@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireSession } from "@/lib/services/apiAuth";
 import { getKillingQuestions } from "@/lib/services/killingQuestionsService";
 import type { ExamType } from "@/lib/types";
 
@@ -13,6 +14,9 @@ function isExamType(value: string): value is ExamType {
 }
 
 export async function GET(request: Request) {
+  const auth = await requireSession();
+  if (auth.response) return auth.response;
+
   const { searchParams } = new URL(request.url);
   const examType = searchParams.get("examType") ?? "DSAT";
 

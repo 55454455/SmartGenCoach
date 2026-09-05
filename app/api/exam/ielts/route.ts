@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireSession } from "@/lib/services/apiAuth";
 import { getIeltsListeningBundle, getIeltsSpeakingPrompts, getQuestionsByDomain } from "@/lib/services/examService";
 import type { IeltsDomain } from "@/lib/types";
 
@@ -14,6 +15,9 @@ function isIeltsDomain(value: string): value is IeltsDomain {
 export const maxDuration = 60;
 
 export async function GET(request: Request) {
+  const auth = await requireSession();
+  if (auth.response) return auth.response;
+
   const { searchParams } = new URL(request.url);
   const section = searchParams.get("section") ?? "Listening";
 

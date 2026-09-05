@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireSession } from "@/lib/services/apiAuth";
 import { getAllReadinessReports, getReadinessReport } from "@/lib/services/readinessService";
 import type { ExamType } from "@/lib/types";
 
@@ -10,6 +11,9 @@ function isExamType(value: string): value is ExamType {
 
 // PHASE2: readiness is computed live by the Orchestrator Agent from full attempt history.
 export async function GET(request: Request) {
+  const auth = await requireSession();
+  if (auth.response) return auth.response;
+
   const { searchParams } = new URL(request.url);
   const examType = searchParams.get("examType");
 

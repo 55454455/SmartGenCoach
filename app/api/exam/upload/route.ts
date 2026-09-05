@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireSession } from "@/lib/services/apiAuth";
 import {
   createUploadedExamFromDocument,
   createUploadedExamFromUrl,
@@ -13,12 +14,18 @@ import type { ExamType } from "@/lib/types";
 export const maxDuration = 60;
 
 export async function GET(request: Request) {
+  const auth = await requireSession();
+  if (auth.response) return auth.response;
+
   const examType = new URL(request.url).searchParams.get("examType") as ExamType | null;
   const exams = await getUploadedExams(examType ?? undefined);
   return NextResponse.json(exams);
 }
 
 export async function POST(request: Request) {
+  const auth = await requireSession();
+  if (auth.response) return auth.response;
+
   const formData = await request.formData();
   const examType = formData.get("examType") as ExamType | null;
   const sourceType = formData.get("sourceType");

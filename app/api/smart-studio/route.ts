@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireSession } from "@/lib/services/apiAuth";
 import { getUserTests, uploadDocument } from "@/lib/services/smartStudioService";
 
 // Same reasoning as app/api/exam/upload/route.ts — document extraction is a real, potentially
@@ -6,11 +7,17 @@ import { getUserTests, uploadDocument } from "@/lib/services/smartStudioService"
 export const maxDuration = 60;
 
 export async function GET() {
+  const auth = await requireSession();
+  if (auth.response) return auth.response;
+
   const tests = await getUserTests();
   return NextResponse.json(tests);
 }
 
 export async function POST(request: Request) {
+  const auth = await requireSession();
+  if (auth.response) return auth.response;
+
   const formData = await request.formData();
   const file = formData.get("file");
   if (!(file instanceof File)) {
