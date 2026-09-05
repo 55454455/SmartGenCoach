@@ -93,12 +93,14 @@ npm run lint    # ESLint, including React Compiler's stricter hooks rules
 - **Route groups**: `app/(auth)` (login/register, unauthenticated) and `app/(app)` (dashboard,
   select-exam, killing-questions, smart-studio, admin, lets-play — wrapped in `AuthGuard`). Full
   timed exams live outside both groups, directly under `app/exam/*`.
-- **Auth boundary**: `proxy.ts` → `lib/supabase/middleware.ts` is intended to be the real
-  server-side gate (see the comment in `components/layout/AuthGuard.tsx`); `AuthGuard` is a
-  client-side confirmation layer on top of it, not a replacement. See
-  [Known limitations](#known-limitations) — this boundary currently has real gaps.
-  Its `PROTECTED_PREFIXES` list matches on the request pathname, which is a routing detail worth
-  double-checking whenever a new top-level route is added.
+- **Auth boundary**: `proxy.ts` → `lib/supabase/middleware.ts` gates page navigations by pathname
+  (`PROTECTED_PREFIXES`) — this only covers pages, not API routes, so it's a routing detail worth
+  double-checking whenever a new top-level *page* is added. `AuthGuard` (see the comment in
+  `components/layout/AuthGuard.tsx`) is a client-side confirmation layer on top of it, not a
+  replacement. Every route handler under `app/api/` enforces its own session check via
+  `lib/services/apiAuth.ts`'s `requireSession()`/`requireAdminSession()` — see the note in
+  [Known limitations](#known-limitations) about why that lives per-route instead of in the
+  middleware.
 - **Services layer** (`lib/services/*`): all data access and Claude calls are isolated here behind
   plain async functions, decoupled from the mock data in `lib/mockData.ts`. Look for `PHASE2`
   comments — they mark exactly where a function currently returns mock/static data and what the
@@ -109,73 +111,68 @@ npm run lint    # ESLint, including React Compiler's stricter hooks rules
 ## Known limitations
 
 Found while exercising the app end-to-end (dev server, real HTTP requests, no live Supabase/Anthropic
-credentials — see below for what that does and doesn't cover):
+credentials — see below for what that does and doesn't cover). Items 1–3 were fixed after being
+found; the fix approach is worth understanding since it shapes how new routes/pages should be added.
 
-1. **Most API routes have no server-side auth check.** `proxy.ts`'s `PROTECTED_PREFIXES` list
-   (`lib/supabase/middleware.ts`) only ever matches page paths like `/dashboard` or
-   `/killing-questions` — no entry starts with `/api`, so it never matches an API route's actual
-   path (`/api/dashboard`, `/api/killing-questions`, etc.), even though the middleware's matcher
-   does run on `/api/*`. Of the 19 route handlers under `app/api/`, only `admin/users` and
-   `auth/session` call `getCurrentSession()` themselves. Confirmed by curling
-   `/api/dashboard`, `/api/killing-questions?examType=DSAT`, `/api/exam/dsat`, and others directly
-   with no session cookie — all returned real data (or a real Claude-call attempt) instead of a
-   403. This means every Claude-backed endpoint (`ask-ai`, `killing-questions`, `exam/ap`,
-   `exam/dsat`, `exam/dsat/adaptive-module`, `exam/ielts`, `exam/questions`, `exam/upload*`,
-   `smart-studio*`) is publicly callable and billable by anyone with the URL, logged in or not.
-2. **`/lets-play` is missing from `PROTECTED_PREFIXES`.** Every other page under `app/(app)` is
-   listed; this one isn't, so it's the one page in that group actually reachable pre-redirect,
-   contradicting the "proxy.ts is the real boundary" comment in `AuthGuard.tsx`. `AuthGuard`'s
-   client-side check still catches it after the fact, but only after the page has loaded once.
-3. **Network-level auth failures leak raw error text.** `authService.register()` calls
-   `supabase.auth.signUp()` without a try/catch around the fetch itself; when that fetch throws
-   (as opposed to `supabase` returning an `{ error }` object), the route handler's catch-all
-   forwards `err.message` verbatim — reproduced locally as `{"error":"fetch failed"}`. `login()`
-   has the same shape of exposure. Contrast with the AI routes, which all normalize failures to a
-   friendly "Something went wrong talking to the AI" message.
+1. ~~Most API routes had no server-side auth check~~ **Fixed.** `proxy.ts`'s `PROTECTED_PREFIXES`
+   (`lib/supabase/middleware.ts`) only ever matches page paths like `/dashboard` — it never matches
+   an API route's actual path (`/api/dashboard`), even though the middleware's matcher runs on
+   `/api/*` too. Of 19 route handlers under `app/api/`, only 2 called `getCurrentSession()`
+   themselves; the other 17 — including every Claude-backed generation endpoint — were confirmed
+   publicly callable with no session cookie. Fixed by giving every route handler its own
+   `requireSession()`/`requireAdminSession()` call (`lib/services/apiAuth.ts`), rather than
+   extending `PROTECTED_PREFIXES` to API paths — a middleware redirect would send a `fetch()`
+   caller an HTML login page instead of a `401` JSON body, which is worse than the gap it would
+   close. **New API routes must call one of these two helpers themselves; the middleware does not
+   protect them.**
+2. ~~`/lets-play` was missing from `PROTECTED_PREFIXES`~~ **Fixed** — added alongside its sibling
+   pages in `app/(app)`.
+3. ~~Network-level auth failures leaked raw error text~~ **Fixed.** `authService.login()`/
+   `register()` now wrap the Supabase `signIn`/`signUp` calls (`guardNetwork()`) so a fetch-level
+   throw (project unreachable, DNS, timeout) surfaces a friendly message instead of the raw
+   exception text — reproduced locally as `{"error":"fetch failed"}` before the fix.
 4. **Admin user listing is mocked** (`lib/services/adminService.ts`, tagged `PHASE2`) — returns
    `ADMIN_USER_DIRECTORY` from `lib/mockData.ts` regardless of what's actually in Supabase. The
-   admin role check on top of it (`app/api/admin/users/route.ts`) is real.
+   admin role check on top of it (`app/api/admin/users/route.ts`, via `requireAdminSession()`) is
+   real.
 5. **No automated tests and no CI.** No test runner is configured (`package.json` has no `test`
    script) and there's no `.github/workflows`. Verification today is manual (`npm run lint`,
-   `tsc --noEmit`, `npm run build`, and hand-testing).
+   `tsc --noEmit`, `npm run build`, and hand-testing) — this is exactly how the gaps above were
+   found and how the fix was verified.
 
 What "end-to-end" did and didn't cover in this pass: without real Supabase/Anthropic credentials,
 protected pages correctly redirect to `/login` (verified with placeholder Supabase env vars — an
 unreachable project URL makes `getUser()` resolve to "no user" the same way an expired session
-would), and non-AI routes (IELTS content, dashboard mock data) render correctly. AI-generation
-flows (DSAT/AP question generation, Smart Studio, Ask AI) could not be exercised past confirming
-they fail gracefully without a key — they need a real `ANTHROPIC_API_KEY` to verify the actual
-generated content, timing, and adaptive-difficulty behavior.
+would), and non-AI routes (IELTS content, dashboard mock data) render correctly. Post-fix, every
+previously-open route now returns `401` under the same conditions, `auth/login` and `auth/register`
+remain reachable unauthenticated as intended, and `/lets-play` redirects like its sibling pages.
+AI-generation flows (DSAT/AP question generation, Smart Studio, Ask AI) still couldn't be exercised
+past confirming they fail gracefully without a key — they need a real `ANTHROPIC_API_KEY` to verify
+the actual generated content, timing, and adaptive-difficulty behavior.
 
 ## Suggested enhancements
 
 Roughly in priority order:
 
-1. **Close the API auth gap** (#1 above). Either extend `PROTECTED_PREFIXES` to cover API paths, or
-   — more robust against future routes being added and forgotten — flip the model: make
-   `getCurrentSession()` (or a thin wrapper) the default for every route under `app/api/`, and
-   opt specific routes *out* rather than in. Also add `/lets-play` to the page-level list.
-2. **Add a `.env.example`** listing `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and
+1. **Add a `.env.example`** listing `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and
    `ANTHROPIC_API_KEY` — right now a new contributor has to read source to discover them.
-3. **Rate-limit or budget-cap the Claude-backed endpoints** once #1 is fixed and this goes anywhere
-   near production traffic — even authenticated users could otherwise reload a full-exam page in a
-   loop and generate an unbounded number of paid API calls.
-4. **Wrap Supabase network calls in `authService`** (and any other service that calls Supabase
-   directly) so a transient outage surfaces the same kind of friendly message the AI routes already
-   give, instead of raw fetch errors.
-5. **Cache generated questions** — persist a freshly generated DSAT/AP/IELTS set (or Killing
+2. **Rate-limit or budget-cap the Claude-backed endpoints.** The auth gap is closed, but any
+   authenticated user could still reload a full-exam page in a loop and generate an unbounded
+   number of paid API calls.
+3. **Cache generated questions** — persist a freshly generated DSAT/AP/IELTS set (or Killing
    Questions batch) against its inputs (exam type, domain, difficulty, skill slots) so retries,
    page refreshes, and repeated practice of the same skill don't re-spend a Claude call for
    content that's already been generated.
-6. **Add a test suite.** Given the amount of business logic in `lib/services/*` (adaptive
+4. **Add a test suite.** Given the amount of business logic in `lib/services/*` (adaptive
    difficulty, readiness thresholds, Killing Questions targeting, the calculator's expression
    parser) that's independent of the UI, unit tests there would catch regressions cheaply; a
    handful of Playwright smoke tests (login → select exam → answer a question) would cover the
-   auth-gated flows end-to-end.
-7. **Basic CI** (`.github/workflows`) running `npm run lint`, `tsc --noEmit`, and `npm run build`
+   auth-gated flows end-to-end — and a unit test on `requireSession()` usage would catch a future
+   route that forgets to call it, which is exactly how items 1–2 above happened in the first place.
+5. **Basic CI** (`.github/workflows`) running `npm run lint`, `tsc --noEmit`, and `npm run build`
    on every PR — none of the fixes in this pass would have needed a manual dev-server check to
    catch if that had existed already.
-8. **Finish the `PHASE2` items** flagged throughout `lib/services/*` — most notably real
+6. **Finish the `PHASE2` items** flagged throughout `lib/services/*` — most notably real
    Supabase-backed admin user listing (`adminService.ts`) and swapping `lib/mockData.ts`-backed
    exam attempts/readiness data for live Supabase queries.
 
