@@ -16,9 +16,10 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const examType = searchParams.get("examType");
+  const userId = auth.session.user.id;
 
   if (!examType) {
-    const all = await getAllReadinessReports();
+    const all = await getAllReadinessReports(userId);
     return NextResponse.json(all);
   }
 
@@ -26,6 +27,6 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Invalid examType." }, { status: 400 });
   }
 
-  const report = await getReadinessReport(examType);
+  const report = await getReadinessReport(userId, examType);
   return NextResponse.json(report);
 }

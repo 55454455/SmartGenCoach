@@ -25,14 +25,18 @@ import { generateExamQuestions, type SkillSlot } from "./examQuestionGenerator";
 import { simulateLatency } from "./simulateLatency";
 
 // PHASE2: replace with a Supabase query filtered by user_id (+ exam_type), ordered by date_taken.
-export async function getExamAttempts(examType?: ExamType): Promise<ExamAttempt[]> {
+// EXAM_ATTEMPTS is a fixed demo history tagged with DEMO_USER.id — filtering by the real caller's
+// id means anyone other than that demo account (i.e. every real signed-up user) correctly gets an
+// empty array, which is what should show a first-time-login empty state rather than someone else's
+// numbers.
+export async function getExamAttempts(userId: string, examType?: ExamType): Promise<ExamAttempt[]> {
   await simulateLatency(200);
-  const attempts = examType ? EXAM_ATTEMPTS.filter((a) => a.examType === examType) : EXAM_ATTEMPTS;
+  const attempts = EXAM_ATTEMPTS.filter((a) => a.userId === userId && (!examType || a.examType === examType));
   return [...attempts].sort((a, b) => new Date(a.dateTaken).getTime() - new Date(b.dateTaken).getTime());
 }
 
-export async function getLatestAttempt(examType: ExamType): Promise<ExamAttempt | undefined> {
-  const attempts = await getExamAttempts(examType);
+export async function getLatestAttempt(userId: string, examType: ExamType): Promise<ExamAttempt | undefined> {
+  const attempts = await getExamAttempts(userId, examType);
   return attempts.at(-1);
 }
 
@@ -54,22 +58,27 @@ function makeIdPrefix(examType: ExamType, domain: SkillDomain): string {
   return `q-${examType.toLowerCase()}-${slug}-${Date.now()}-${Math.round(Math.random() * 10000)}`;
 }
 
-function shuffle<T>(items: T[]): T[] {
-  const result = [...items];
-  for (let i = result.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [result[i], result[j]] = [result[j], result[i]];
-  }
-  return result;
+const DIFFICULTY_RANK: Record<Difficulty, number> = { Easy: 0, Medium: 1, Hard: 2 };
+
+// A stable sort, so within one difficulty tier questions keep whatever order they arrived in.
+function sortByDifficulty(questions: Question[]): Question[] {
+  return [...questions].sort((a, b) => DIFFICULTY_RANK[a.difficulty] - DIFFICULTY_RANK[b.difficulty]);
 }
 
 // Generates one DSAT module's full, real Bluebook-count question set (27 for Reading and Writing,
 // 22 for Math), matching College Board's official content-domain mix via DSAT_CONTENT_DOMAIN_TARGETS
 // — one Claude call per content domain (fired in parallel, so wall-clock time stays close to a
 // single call) rather than one call for the whole module, which also keeps each individual request
-// small enough to avoid truncating a 20+ question response. The result is shuffled before it's
-// returned since a real module interleaves content domains rather than grouping them.
-async function generateDsatModuleQuestions(domain: DsatDomain, difficulty: Difficulty): Promise<Question[]> {
+// small enough to avoid truncating a 20+ question response.
+//
+// The two sections order questions differently, per College Board's published test specs:
+//  - Reading and Writing presents its four content domains as fixed, separate blocks in a set
+//    order (Craft and Structure, Information and Ideas, Standard English Conventions, Expression
+//    of Ideas — the same order DSAT_CONTENT_DOMAIN_TARGETS lists them in), with each block's own
+//    questions sequenced easiest to hardest.
+//  - Math has no domain blocking — content domains are intermixed — but the module as a whole is
+//    still sequenced roughly easiest to hardest.
+async function generateDsatModuleQuestions(domain: DsatDomain, difficulty: Difficulty | "Mixed"): Promise<Question[]> {
   const targets = DSAT_CONTENT_DOMAIN_TARGETS[domain];
   const buckets = await Promise.all(
     targets.map(({ contentDomain, count }) => {
@@ -83,7 +92,11 @@ async function generateDsatModuleQuestions(domain: DsatDomain, difficulty: Diffi
       return generateExamQuestions({ examType: "DSAT", domain, slots, difficulty, idPrefix: makeIdPrefix("DSAT", domain) });
     }),
   );
-  return shuffle(buckets.flat());
+
+  if (domain === "Reading and Writing") {
+    return buckets.flatMap(sortByDifficulty);
+  }
+  return sortByDifficulty(buckets.flat());
 }
 
 export interface DsatExamBundle {
@@ -91,16 +104,17 @@ export interface DsatExamBundle {
   questionsById: Record<string, Question>;
 }
 
-// Real Claude-generated Module 1 for each DSAT domain (Reading and Writing, Math), always at
-// Medium difficulty — mirrors Bluebook, where every student's first module starts at the same
-// baseline difficulty. Each domain's Module 2 comes back as an empty placeholder here; the client
-// fetches its real content from getAdaptiveDsatModule2 once Module 1 for that domain is scored, so
-// its difficulty can react to that student's own Module 1 performance (genuine multistage adaptive
-// testing, not just AI-generated-but-static content).
+// Real Claude-generated Module 1 for each DSAT domain (Reading and Writing, Math) — every student
+// gets the same baseline module, so "Mixed" difficulty (a natural Easy/Medium/Hard spread, then
+// sequenced easiest to hardest by generateDsatModuleQuestions) mirrors Bluebook's actual Module 1
+// more closely than a single uniform difficulty would. Each domain's Module 2 comes back as an
+// empty placeholder here; the client fetches its real content from getAdaptiveDsatModule2 once
+// Module 1 for that domain is scored, so its difficulty can react to that student's own Module 1
+// performance (genuine multistage adaptive testing, not just AI-generated-but-static content).
 export async function getDsatExamBundle(): Promise<DsatExamBundle> {
   const [rwQuestions, mathQuestions] = await Promise.all([
-    generateDsatModuleQuestions("Reading and Writing", "Medium"),
-    generateDsatModuleQuestions("Math", "Medium"),
+    generateDsatModuleQuestions("Reading and Writing", "Mixed"),
+    generateDsatModuleQuestions("Math", "Mixed"),
   ]);
 
   const questionsById: Record<string, Question> = {};

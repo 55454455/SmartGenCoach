@@ -136,6 +136,15 @@ export async function generateExamQuestions(params: {
       "question from scratch; never mention the discarded attempt or the mismatch anywhere in your answer. "
     : "";
 
+  // College Board's Digital SAT spec calls for roughly 30% of Math questions to be "in context"
+  // (real-world word problems) rather than bare symbolic/computational ones.
+  const dsatMathContextLine =
+    examType === "DSAT" && domain === "Math"
+      ? "About 3 in 10 of these should be an \"in context\" word problem grounded in a realistic scenario " +
+        "(science, business, everyday life, etc.) rather than a bare equation to solve; the rest can be direct " +
+        "symbolic/computational questions. "
+      : "";
+
   // More retries here than the single-batch Killing Questions generator: a whole batch of
   // quantitative questions is more likely to trip the leak guard on at least one item, so give it
   // more chances to land a fully clean batch before giving up.
@@ -156,7 +165,7 @@ export async function generateExamQuestions(params: {
             role: "user",
             content:
               `Generate ${slots.length} brand-new, never-seen ${examType} ${domain} multiple-choice question(s), one ` +
-              `for each numbered skill slot below (each needs exactly 4 answer choices). ${difficultyLine} ${constructionLine}` +
+              `for each numbered skill slot below (each needs exactly 4 answer choices). ${difficultyLine} ${constructionLine}${dsatMathContextLine}` +
               `Work out each question and its answer choices carefully yourself first, but keep that work private: ` +
               `report only the final, clean question, answer choices, and explanation — never include hedging, self-` +
               `correction, or visible scratch work like "wait", "let me recheck", or "..." in any field, and double-check ` +

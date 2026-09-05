@@ -25,7 +25,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const result = await getKillingQuestions(examType);
+    const result = await getKillingQuestions(examType, auth.session.user.id);
     return NextResponse.json(result);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Could not generate targeted practice questions.";

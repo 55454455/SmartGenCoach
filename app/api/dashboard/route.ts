@@ -10,10 +10,11 @@ export async function GET() {
   const auth = await requireSession();
   if (auth.response) return auth.response;
 
+  const userId = auth.session.user.id;
   const [readiness, attempts, weakestSkills] = await Promise.all([
-    getAllReadinessReports(),
-    getExamAttempts(),
-    getAllWeakestSkills(6),
+    getAllReadinessReports(userId),
+    getExamAttempts(userId),
+    getAllWeakestSkills(userId, 6),
   ]);
   return NextResponse.json({ readiness, attempts, weakestSkills });
 }
