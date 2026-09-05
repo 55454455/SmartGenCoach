@@ -1,5 +1,6 @@
 import {
   AP_MODULES,
+  DSAT_CONTENT_DOMAIN_TARGETS,
   DSAT_MODULES,
   EXAM_ATTEMPTS,
   IELTS_LISTENING_AUDIO_DURATION_SECONDS,
@@ -11,6 +12,7 @@ import {
 } from "@/lib/mockData";
 import type {
   Difficulty,
+  DsatDomain,
   ExamAttempt,
   ExamModule,
   ExamType,
@@ -52,6 +54,38 @@ function makeIdPrefix(examType: ExamType, domain: SkillDomain): string {
   return `q-${examType.toLowerCase()}-${slug}-${Date.now()}-${Math.round(Math.random() * 10000)}`;
 }
 
+function shuffle<T>(items: T[]): T[] {
+  const result = [...items];
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+}
+
+// Generates one DSAT module's full, real Bluebook-count question set (27 for Reading and Writing,
+// 22 for Math), matching College Board's official content-domain mix via DSAT_CONTENT_DOMAIN_TARGETS
+// — one Claude call per content domain (fired in parallel, so wall-clock time stays close to a
+// single call) rather than one call for the whole module, which also keeps each individual request
+// small enough to avoid truncating a 20+ question response. The result is shuffled before it's
+// returned since a real module interleaves content domains rather than grouping them.
+async function generateDsatModuleQuestions(domain: DsatDomain, difficulty: Difficulty): Promise<Question[]> {
+  const targets = DSAT_CONTENT_DOMAIN_TARGETS[domain];
+  const buckets = await Promise.all(
+    targets.map(({ contentDomain, count }) => {
+      const pool = SKILL_CATALOG.filter(
+        (s) => s.examType === "DSAT" && s.domain === domain && s.contentDomain === contentDomain,
+      );
+      const slots: SkillSlot[] = Array.from({ length: count }, (_, i) => {
+        const skill = pool[i % pool.length];
+        return { skillId: skill.skillId, skillName: skill.skillName };
+      });
+      return generateExamQuestions({ examType: "DSAT", domain, slots, difficulty, idPrefix: makeIdPrefix("DSAT", domain) });
+    }),
+  );
+  return shuffle(buckets.flat());
+}
+
 export interface DsatExamBundle {
   modules: ExamModule[];
   questionsById: Record<string, Question>;
@@ -64,24 +98,9 @@ export interface DsatExamBundle {
 // its difficulty can react to that student's own Module 1 performance (genuine multistage adaptive
 // testing, not just AI-generated-but-static content).
 export async function getDsatExamBundle(): Promise<DsatExamBundle> {
-  const rwModule1Template = DSAT_MODULES.find((m) => m.id === "dsat-rw-module-1")!;
-  const mathModule1Template = DSAT_MODULES.find((m) => m.id === "dsat-math-module-1")!;
-
   const [rwQuestions, mathQuestions] = await Promise.all([
-    generateExamQuestions({
-      examType: "DSAT",
-      domain: "Reading and Writing",
-      slots: skillSlotsForDomain("DSAT", "Reading and Writing", rwModule1Template.questionIds.length),
-      difficulty: "Medium",
-      idPrefix: makeIdPrefix("DSAT", "Reading and Writing"),
-    }),
-    generateExamQuestions({
-      examType: "DSAT",
-      domain: "Math",
-      slots: skillSlotsForDomain("DSAT", "Math", mathModule1Template.questionIds.length),
-      difficulty: "Medium",
-      idPrefix: makeIdPrefix("DSAT", "Math"),
-    }),
+    generateDsatModuleQuestions("Reading and Writing", "Medium"),
+    generateDsatModuleQuestions("Math", "Medium"),
   ]);
 
   const questionsById: Record<string, Question> = {};
@@ -101,19 +120,21 @@ export interface AdaptiveDsatModuleResult {
   questionsById: Record<string, Question>;
 }
 
-function difficultyFromPerformance(correctCount: number, total: number): Difficulty {
-  if (total <= 0) return "Medium";
-  const ratio = correctCount / total;
-  if (ratio >= 0.75) return "Hard";
-  if (ratio >= 0.4) return "Medium";
-  return "Easy";
+// Bluebook routes Module 2 down exactly one of two paths — a harder module or an easier one —
+// based on Module 1 performance; it is not a 3-way Easy/Medium/Hard split. College Board's real
+// routing uses an undisclosed IRT-based ability estimate, not a published percentage cutoff, so
+// this threshold approximates the real behavior rather than replicating an official number.
+function routeModule2Difficulty(correctCount: number, total: number): Difficulty {
+  if (total <= 0) return "Hard"; // no Module 1 data — unreachable in practice, default to the standard path
+  return correctCount / total >= 0.6 ? "Hard" : "Easy";
 }
 
 // The adaptive step: Module 2's difficulty for a domain is derived from the student's own Module 1
 // performance in that same domain — strong Module 1 -> harder Module 2, weak Module 1 -> easier
-// Module 2 — exactly like the real digital SAT's multistage adaptive design.
+// Module 2 — exactly like the real digital SAT's multistage adaptive design. Module 2 gets the same
+// real question count and content-domain mix as Module 1 (Bluebook doesn't shrink Module 2).
 export async function getAdaptiveDsatModule2(params: {
-  domain: "Math" | "Reading and Writing";
+  domain: DsatDomain;
   correctCount: number;
   total: number;
 }): Promise<AdaptiveDsatModuleResult> {
@@ -121,14 +142,8 @@ export async function getAdaptiveDsatModule2(params: {
   const template = DSAT_MODULES.find((m) => m.domain === domain && m.id.endsWith("module-2"));
   if (!template) throw new Error(`No Module 2 template found for domain "${domain}".`);
 
-  const difficulty = difficultyFromPerformance(correctCount, total);
-  const questions = await generateExamQuestions({
-    examType: "DSAT",
-    domain,
-    slots: skillSlotsForDomain("DSAT", domain, template.questionIds.length),
-    difficulty,
-    idPrefix: makeIdPrefix("DSAT", domain),
-  });
+  const difficulty = routeModule2Difficulty(correctCount, total);
+  const questions = await generateDsatModuleQuestions(domain, difficulty);
 
   const questionsById: Record<string, Question> = {};
   for (const q of questions) questionsById[q.id] = q;

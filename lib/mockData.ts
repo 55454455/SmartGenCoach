@@ -123,21 +123,24 @@ interface SkillDef {
   skillName: string;
   examType: ExamType;
   domain: DsatDomain | ApDomain | IeltsDomain;
+  // DSAT only: which of College Board's 4 official content domains (per section) this skill
+  // belongs to. Drives DSAT_CONTENT_DOMAIN_TARGETS below — every other exam type ignores this.
+  contentDomain?: string;
 }
 
 export const SKILL_CATALOG: SkillDef[] = [
-  // DSAT Math
-  { skillId: "dsat-math-linear-eq", skillName: "Linear Equations", examType: "DSAT", domain: "Math" },
-  { skillId: "dsat-math-systems", skillName: "Systems of Equations", examType: "DSAT", domain: "Math" },
-  { skillId: "dsat-math-quadratics", skillName: "Quadratic Functions", examType: "DSAT", domain: "Math" },
-  { skillId: "dsat-math-ratios", skillName: "Ratios & Proportions", examType: "DSAT", domain: "Math" },
-  { skillId: "dsat-math-stats", skillName: "Statistics & Probability", examType: "DSAT", domain: "Math" },
-  { skillId: "dsat-math-geometry", skillName: "Geometry & Trigonometry", examType: "DSAT", domain: "Math" },
-  // DSAT Reading and Writing
-  { skillId: "dsat-rw-craft", skillName: "Craft and Structure", examType: "DSAT", domain: "Reading and Writing" },
-  { skillId: "dsat-rw-info", skillName: "Information and Ideas", examType: "DSAT", domain: "Reading and Writing" },
-  { skillId: "dsat-rw-conventions", skillName: "Standard English Conventions", examType: "DSAT", domain: "Reading and Writing" },
-  { skillId: "dsat-rw-expression", skillName: "Expression of Ideas", examType: "DSAT", domain: "Reading and Writing" },
+  // DSAT Math — contentDomain matches College Board's 4 official Math content domains.
+  { skillId: "dsat-math-linear-eq", skillName: "Linear Equations", examType: "DSAT", domain: "Math", contentDomain: "Algebra" },
+  { skillId: "dsat-math-systems", skillName: "Systems of Equations", examType: "DSAT", domain: "Math", contentDomain: "Algebra" },
+  { skillId: "dsat-math-quadratics", skillName: "Quadratic Functions", examType: "DSAT", domain: "Math", contentDomain: "Advanced Math" },
+  { skillId: "dsat-math-ratios", skillName: "Ratios & Proportions", examType: "DSAT", domain: "Math", contentDomain: "Problem-Solving and Data Analysis" },
+  { skillId: "dsat-math-stats", skillName: "Statistics & Probability", examType: "DSAT", domain: "Math", contentDomain: "Problem-Solving and Data Analysis" },
+  { skillId: "dsat-math-geometry", skillName: "Geometry & Trigonometry", examType: "DSAT", domain: "Math", contentDomain: "Geometry and Trigonometry" },
+  // DSAT Reading and Writing — College Board's 4 official R&W content domains, 1:1 with these skills.
+  { skillId: "dsat-rw-craft", skillName: "Craft and Structure", examType: "DSAT", domain: "Reading and Writing", contentDomain: "Craft and Structure" },
+  { skillId: "dsat-rw-info", skillName: "Information and Ideas", examType: "DSAT", domain: "Reading and Writing", contentDomain: "Information and Ideas" },
+  { skillId: "dsat-rw-conventions", skillName: "Standard English Conventions", examType: "DSAT", domain: "Reading and Writing", contentDomain: "Standard English Conventions" },
+  { skillId: "dsat-rw-expression", skillName: "Expression of Ideas", examType: "DSAT", domain: "Reading and Writing", contentDomain: "Expression of Ideas" },
   // AP Calculus
   { skillId: "ap-calc-limits", skillName: "Limits & Continuity", examType: "AP", domain: "Calculus" },
   { skillId: "ap-calc-derivatives", skillName: "Derivatives", examType: "AP", domain: "Calculus" },
@@ -756,8 +759,35 @@ export const QUESTION_BANK: Question[] = [
 export const QUESTION_BY_ID = new Map(QUESTION_BANK.map((q) => [q.id, q]));
 
 // ---------------------------------------------------------------------------
-// DSAT exam modules — mirrors Bluebook's real module durations.
+// DSAT exam modules — mirrors Bluebook's real module durations. The questionIds arrays below are
+// illustrative placeholders only (into the static QUESTION_BANK) — the real per-attempt question
+// count and content-domain mix come from DSAT_CONTENT_DOMAIN_TARGETS, not from these arrays'
+// length, since a real attempt always generates fresh questions rather than using this bank.
 // ---------------------------------------------------------------------------
+
+// Real Bluebook per-module question counts (27 for Reading and Writing, 22 for Math — identical
+// in Module 1 and Module 2 of a section) broken down by College Board's official content domains.
+// College Board's Digital SAT Assessment Framework publishes these as section-wide *ranges*, not
+// fixed per-module integers (Craft and Structure 13–15, Information and Ideas 12–14, Standard
+// English Conventions 11–15, Expression of Ideas 8–12 of the 54 R&W questions; Algebra 13–15,
+// Advanced Math 13–15, Problem-Solving and Data Analysis 5–7, Geometry and Trigonometry 5–7 of the
+// 44 Math questions) so forms can vary module-to-module — there is no single official fixed
+// breakdown to match exactly. The counts below are chosen to (a) sum to exactly the real per-module
+// total and (b) land close to the midpoint of each official range.
+export const DSAT_CONTENT_DOMAIN_TARGETS: Record<DsatDomain, { contentDomain: string; count: number }[]> = {
+  "Reading and Writing": [
+    { contentDomain: "Craft and Structure", count: 8 },
+    { contentDomain: "Information and Ideas", count: 7 },
+    { contentDomain: "Standard English Conventions", count: 7 },
+    { contentDomain: "Expression of Ideas", count: 5 },
+  ],
+  Math: [
+    { contentDomain: "Algebra", count: 8 },
+    { contentDomain: "Advanced Math", count: 8 },
+    { contentDomain: "Problem-Solving and Data Analysis", count: 3 },
+    { contentDomain: "Geometry and Trigonometry", count: 3 },
+  ],
+};
 
 export const DSAT_MODULES: ExamModule[] = [
   {
