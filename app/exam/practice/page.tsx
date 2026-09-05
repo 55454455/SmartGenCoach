@@ -7,6 +7,7 @@ import { SkillPracticeQuiz } from "@/components/exam/SkillPracticeQuiz";
 import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
 import { useExamTheme } from "@/hooks/useExamTheme";
+import { useResetOnKeyChange } from "@/hooks/useResetOnKeyChange";
 import type { ExamType, Question } from "@/lib/types";
 import { accentForExam } from "@/lib/utils/accent";
 
@@ -20,10 +21,14 @@ function PracticeContent() {
 
   useExamTheme(examType ? accentForExam(examType) : null);
 
-  useEffect(() => {
+  useResetOnKeyChange(`${examType ?? ""}|${domains.join(",")}`, () => {
     if (!examType || domains.length === 0) return;
     setQuestions(null);
     setLoadError(null);
+  });
+
+  useEffect(() => {
+    if (!examType || domains.length === 0) return;
     const params = new URLSearchParams({ examType });
     domains.forEach((domain) => params.append("domain", domain));
     fetch(`/api/exam/questions?${params.toString()}`)

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireSession } from "@/lib/services/apiAuth";
 import { getKillingQuestions } from "@/lib/services/killingQuestionsService";
 import type { ExamType } from "@/lib/types";
 
@@ -13,6 +14,9 @@ function isExamType(value: string): value is ExamType {
 }
 
 export async function GET(request: Request) {
+  const auth = await requireSession();
+  if (auth.response) return auth.response;
+
   const { searchParams } = new URL(request.url);
   const examType = searchParams.get("examType") ?? "DSAT";
 
@@ -21,7 +25,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const result = await getKillingQuestions(examType);
+    const result = await getKillingQuestions(examType, auth.session.user.id);
     return NextResponse.json(result);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Could not generate targeted practice questions.";

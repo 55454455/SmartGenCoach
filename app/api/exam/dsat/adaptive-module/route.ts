@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireSession } from "@/lib/services/apiAuth";
 import { getAdaptiveDsatModule2 } from "@/lib/services/examService";
 
 // Real Claude call (thinking + up to 3 retries) generating Module 2's questions on the fly, once
@@ -13,6 +14,9 @@ interface AdaptiveModuleRequestBody {
 }
 
 export async function POST(request: Request) {
+  const auth = await requireSession();
+  if (auth.response) return auth.response;
+
   const body = (await request.json()) as AdaptiveModuleRequestBody;
   if (body.domain !== "Math" && body.domain !== "Reading and Writing") {
     return NextResponse.json({ error: "domain must be \"Math\" or \"Reading and Writing\"." }, { status: 400 });

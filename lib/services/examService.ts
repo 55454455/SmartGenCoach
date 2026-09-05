@@ -1,5 +1,6 @@
 import {
   AP_MODULES,
+  DSAT_CONTENT_DOMAIN_TARGETS,
   DSAT_MODULES,
   EXAM_ATTEMPTS,
   IELTS_LISTENING_AUDIO_DURATION_SECONDS,
@@ -11,6 +12,7 @@ import {
 } from "@/lib/mockData";
 import type {
   Difficulty,
+  DsatDomain,
   ExamAttempt,
   ExamModule,
   ExamType,
@@ -23,14 +25,18 @@ import { generateExamQuestions, type SkillSlot } from "./examQuestionGenerator";
 import { simulateLatency } from "./simulateLatency";
 
 // PHASE2: replace with a Supabase query filtered by user_id (+ exam_type), ordered by date_taken.
-export async function getExamAttempts(examType?: ExamType): Promise<ExamAttempt[]> {
+// EXAM_ATTEMPTS is a fixed demo history tagged with DEMO_USER.id — filtering by the real caller's
+// id means anyone other than that demo account (i.e. every real signed-up user) correctly gets an
+// empty array, which is what should show a first-time-login empty state rather than someone else's
+// numbers.
+export async function getExamAttempts(userId: string, examType?: ExamType): Promise<ExamAttempt[]> {
   await simulateLatency(200);
-  const attempts = examType ? EXAM_ATTEMPTS.filter((a) => a.examType === examType) : EXAM_ATTEMPTS;
+  const attempts = EXAM_ATTEMPTS.filter((a) => a.userId === userId && (!examType || a.examType === examType));
   return [...attempts].sort((a, b) => new Date(a.dateTaken).getTime() - new Date(b.dateTaken).getTime());
 }
 
-export async function getLatestAttempt(examType: ExamType): Promise<ExamAttempt | undefined> {
-  const attempts = await getExamAttempts(examType);
+export async function getLatestAttempt(userId: string, examType: ExamType): Promise<ExamAttempt | undefined> {
+  const attempts = await getExamAttempts(userId, examType);
   return attempts.at(-1);
 }
 
@@ -52,37 +58,106 @@ function makeIdPrefix(examType: ExamType, domain: SkillDomain): string {
   return `q-${examType.toLowerCase()}-${slug}-${Date.now()}-${Math.round(Math.random() * 10000)}`;
 }
 
+const DIFFICULTY_RANK: Record<Difficulty, number> = { Easy: 0, Medium: 1, Hard: 2 };
+
+// A stable sort, so within one difficulty tier questions keep whatever order they arrived in.
+function sortByDifficulty(questions: Question[]): Question[] {
+  return [...questions].sort((a, b) => DIFFICULTY_RANK[a.difficulty] - DIFFICULTY_RANK[b.difficulty]);
+}
+
+// Bounds how many Claude calls run at once across DSAT generation. Splitting each module into one
+// call per content domain (see below) avoids truncating a 20+ question response, but firing every
+// bucket at once via unbounded Promise.all means a Full Exam load (both sections' Module 1s
+// together) sends 8 simultaneous requests — a real risk of tripping Anthropic's concurrent-request
+// rate limits where 2 never would have. This caps it regardless of how many buckets get queued.
+const MAX_CONCURRENT_DSAT_GENERATIONS = 4;
+
+async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let nextIndex = 0;
+  async function worker(): Promise<void> {
+    for (;;) {
+      const i = nextIndex++;
+      if (i >= items.length) return;
+      results[i] = await fn(items[i]);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
+interface DsatBucketRequest {
+  domain: DsatDomain;
+  contentDomain: string;
+  slots: SkillSlot[];
+}
+
+function buildDsatBucketRequests(domain: DsatDomain): DsatBucketRequest[] {
+  return DSAT_CONTENT_DOMAIN_TARGETS[domain].map(({ contentDomain, count }) => {
+    const pool = SKILL_CATALOG.filter(
+      (s) => s.examType === "DSAT" && s.domain === domain && s.contentDomain === contentDomain,
+    );
+    const slots: SkillSlot[] = Array.from({ length: count }, (_, i) => {
+      const skill = pool[i % pool.length];
+      return { skillId: skill.skillId, skillName: skill.skillName };
+    });
+    return { domain, contentDomain, slots };
+  });
+}
+
+// Runs a batch of content-domain bucket requests (each becoming one Claude call) through the
+// shared concurrency cap, then orders the result per College Board's published test specs:
+//  - Reading and Writing presents its four content domains as fixed, separate blocks in a set
+//    order (Craft and Structure, Information and Ideas, Standard English Conventions, Expression
+//    of Ideas — the same order DSAT_CONTENT_DOMAIN_TARGETS lists them in), with each block's own
+//    questions sequenced easiest to hardest.
+//  - Math has no domain blocking — content domains are intermixed — but the module as a whole is
+//    still sequenced roughly easiest to hardest.
+async function runDsatBucketRequests(
+  domain: DsatDomain,
+  requests: DsatBucketRequest[],
+  difficulty: Difficulty | "Mixed",
+): Promise<Question[]> {
+  const buckets = await mapWithConcurrency(requests, MAX_CONCURRENT_DSAT_GENERATIONS, (req) =>
+    generateExamQuestions({ examType: "DSAT", domain: req.domain, slots: req.slots, difficulty, idPrefix: makeIdPrefix("DSAT", req.domain) }),
+  );
+  if (domain === "Reading and Writing") return buckets.flatMap(sortByDifficulty);
+  return sortByDifficulty(buckets.flat());
+}
+
+// Generates one DSAT module's full, real Bluebook-count question set (27 for Reading and Writing,
+// 22 for Math), matching College Board's official content-domain mix via DSAT_CONTENT_DOMAIN_TARGETS.
+// Used for a single domain's Module 2 (getAdaptiveDsatModule2), where the 4-bucket concurrency cap
+// above already applies naturally since there's only one domain in flight at a time.
+async function generateDsatModuleQuestions(domain: DsatDomain, difficulty: Difficulty | "Mixed"): Promise<Question[]> {
+  return runDsatBucketRequests(domain, buildDsatBucketRequests(domain), difficulty);
+}
+
 export interface DsatExamBundle {
   modules: ExamModule[];
   questionsById: Record<string, Question>;
 }
 
-// Real Claude-generated Module 1 for each DSAT domain (Reading and Writing, Math), always at
-// Medium difficulty — mirrors Bluebook, where every student's first module starts at the same
-// baseline difficulty. Each domain's Module 2 comes back as an empty placeholder here; the client
-// fetches its real content from getAdaptiveDsatModule2 once Module 1 for that domain is scored, so
-// its difficulty can react to that student's own Module 1 performance (genuine multistage adaptive
-// testing, not just AI-generated-but-static content).
+// Real Claude-generated Module 1 for each DSAT domain (Reading and Writing, Math) — every student
+// gets the same baseline module, so "Mixed" difficulty (a natural Easy/Medium/Hard spread, then
+// sequenced easiest to hardest by generateDsatModuleQuestions) mirrors Bluebook's actual Module 1
+// more closely than a single uniform difficulty would. Each domain's Module 2 comes back as an
+// empty placeholder here; the client fetches its real content from getAdaptiveDsatModule2 once
+// Module 1 for that domain is scored, so its difficulty can react to that student's own Module 1
+// performance (genuine multistage adaptive testing, not just AI-generated-but-static content).
 export async function getDsatExamBundle(): Promise<DsatExamBundle> {
-  const rwModule1Template = DSAT_MODULES.find((m) => m.id === "dsat-rw-module-1")!;
-  const mathModule1Template = DSAT_MODULES.find((m) => m.id === "dsat-math-module-1")!;
-
-  const [rwQuestions, mathQuestions] = await Promise.all([
-    generateExamQuestions({
-      examType: "DSAT",
-      domain: "Reading and Writing",
-      slots: skillSlotsForDomain("DSAT", "Reading and Writing", rwModule1Template.questionIds.length),
-      difficulty: "Medium",
-      idPrefix: makeIdPrefix("DSAT", "Reading and Writing"),
-    }),
-    generateExamQuestions({
-      examType: "DSAT",
-      domain: "Math",
-      slots: skillSlotsForDomain("DSAT", "Math", mathModule1Template.questionIds.length),
-      difficulty: "Medium",
-      idPrefix: makeIdPrefix("DSAT", "Math"),
-    }),
-  ]);
+  // Both sections' Module 1 buckets share one concurrency-capped pool (rather than each section
+  // running its own independent 4-wide pool via Promise.all, which would still add up to 8
+  // simultaneous calls) — see MAX_CONCURRENT_DSAT_GENERATIONS above.
+  const rwRequests = buildDsatBucketRequests("Reading and Writing");
+  const mathRequests = buildDsatBucketRequests("Math");
+  const allBuckets = await mapWithConcurrency([...rwRequests, ...mathRequests], MAX_CONCURRENT_DSAT_GENERATIONS, (req) =>
+    generateExamQuestions({ examType: "DSAT", domain: req.domain, slots: req.slots, difficulty: "Mixed", idPrefix: makeIdPrefix("DSAT", req.domain) }),
+  );
+  const rwBuckets = allBuckets.slice(0, rwRequests.length);
+  const mathBuckets = allBuckets.slice(rwRequests.length);
+  const rwQuestions = rwBuckets.flatMap(sortByDifficulty);
+  const mathQuestions = sortByDifficulty(mathBuckets.flat());
 
   const questionsById: Record<string, Question> = {};
   for (const q of [...rwQuestions, ...mathQuestions]) questionsById[q.id] = q;
@@ -101,19 +176,21 @@ export interface AdaptiveDsatModuleResult {
   questionsById: Record<string, Question>;
 }
 
-function difficultyFromPerformance(correctCount: number, total: number): Difficulty {
-  if (total <= 0) return "Medium";
-  const ratio = correctCount / total;
-  if (ratio >= 0.75) return "Hard";
-  if (ratio >= 0.4) return "Medium";
-  return "Easy";
+// Bluebook routes Module 2 down exactly one of two paths — a harder module or an easier one —
+// based on Module 1 performance; it is not a 3-way Easy/Medium/Hard split. College Board's real
+// routing uses an undisclosed IRT-based ability estimate, not a published percentage cutoff, so
+// this threshold approximates the real behavior rather than replicating an official number.
+function routeModule2Difficulty(correctCount: number, total: number): Difficulty {
+  if (total <= 0) return "Hard"; // no Module 1 data — unreachable in practice, default to the standard path
+  return correctCount / total >= 0.6 ? "Hard" : "Easy";
 }
 
 // The adaptive step: Module 2's difficulty for a domain is derived from the student's own Module 1
 // performance in that same domain — strong Module 1 -> harder Module 2, weak Module 1 -> easier
-// Module 2 — exactly like the real digital SAT's multistage adaptive design.
+// Module 2 — exactly like the real digital SAT's multistage adaptive design. Module 2 gets the same
+// real question count and content-domain mix as Module 1 (Bluebook doesn't shrink Module 2).
 export async function getAdaptiveDsatModule2(params: {
-  domain: "Math" | "Reading and Writing";
+  domain: DsatDomain;
   correctCount: number;
   total: number;
 }): Promise<AdaptiveDsatModuleResult> {
@@ -121,14 +198,8 @@ export async function getAdaptiveDsatModule2(params: {
   const template = DSAT_MODULES.find((m) => m.domain === domain && m.id.endsWith("module-2"));
   if (!template) throw new Error(`No Module 2 template found for domain "${domain}".`);
 
-  const difficulty = difficultyFromPerformance(correctCount, total);
-  const questions = await generateExamQuestions({
-    examType: "DSAT",
-    domain,
-    slots: skillSlotsForDomain("DSAT", domain, template.questionIds.length),
-    difficulty,
-    idPrefix: makeIdPrefix("DSAT", domain),
-  });
+  const difficulty = routeModule2Difficulty(correctCount, total);
+  const questions = await generateDsatModuleQuestions(domain, difficulty);
 
   const questionsById: Record<string, Question> = {};
   for (const q of questions) questionsById[q.id] = q;
