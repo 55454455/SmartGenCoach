@@ -2,7 +2,6 @@
 // PHASE2: every export here is replaced by a Supabase query or an agent response —
 // the shapes (lib/types.ts) do not change, only where the data comes from.
 import type {
-  AdminUserRow,
   AgentFeedback,
   ApDomain,
   DsatDomain,
@@ -45,74 +44,8 @@ export const ADMIN_USER: UserProfile = {
   role: "admin",
 };
 
-// PHASE2: replaced by a Supabase query joining `profiles` with aggregated `readiness_reports`,
-// scoped by an admin-only RLS policy.
-export const ADMIN_USER_DIRECTORY: AdminUserRow[] = [
-  {
-    id: DEMO_USER.id,
-    name: DEMO_USER.name,
-    email: DEMO_USER.email,
-    createdAt: DEMO_USER.createdAt,
-    scores: { DSAT: 83, AP: 80, IELTS: 76 },
-    overallScore: 80,
-  },
-  {
-    id: "user_002",
-    name: "Marcus Webb",
-    email: "marcus.webb@example.com",
-    createdAt: "2026-02-14T11:20:00.000Z",
-    scores: { DSAT: 91, AP: 88 },
-    overallScore: 90,
-  },
-  {
-    id: "user_003",
-    name: "Priya Nair",
-    email: "priya.nair@example.com",
-    createdAt: "2026-03-01T08:45:00.000Z",
-    scores: { IELTS: 85 },
-    overallScore: 85,
-  },
-  {
-    id: "user_004",
-    name: "Diego Fernandez",
-    email: "diego.fernandez@example.com",
-    createdAt: "2026-03-18T15:30:00.000Z",
-    scores: { DSAT: 62, AP: 58 },
-    overallScore: 60,
-  },
-  {
-    id: "user_005",
-    name: "Hana Kimura",
-    email: "hana.kimura@example.com",
-    createdAt: "2026-04-05T10:05:00.000Z",
-    scores: { DSAT: 74, IELTS: 91 },
-    overallScore: 83,
-  },
-  {
-    id: "user_006",
-    name: "Tunde Adeyemi",
-    email: "tunde.adeyemi@example.com",
-    createdAt: "2026-05-02T13:10:00.000Z",
-    scores: { AP: 95 },
-    overallScore: 95,
-  },
-  {
-    id: "user_007",
-    name: "Sofia Marchetti",
-    email: "sofia.marchetti@example.com",
-    createdAt: "2026-05-20T09:55:00.000Z",
-    scores: { DSAT: 55, AP: 61, IELTS: 68 },
-    overallScore: 61,
-  },
-  {
-    id: "user_008",
-    name: "Owen Baptiste",
-    email: "owen.baptiste@example.com",
-    createdAt: "2026-06-11T17:40:00.000Z",
-    scores: { DSAT: 78 },
-    overallScore: 78,
-  },
-];
+// Real admin user listing now goes through the admin_list_profiles() Supabase RPC
+// (see lib/services/adminService.ts and supabase/admin_schema.sql) instead of mock data.
 
 // ---------------------------------------------------------------------------
 // Skill catalog — the fixed taxonomy of sub-skills per exam/domain.

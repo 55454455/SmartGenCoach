@@ -71,6 +71,12 @@ migrations directory — see `docs/runbooks/apply-lets-play-schema.md` for the e
 2. `supabase/lets_play_schema.sql` — Let's Play rooms/players/answers, RPCs, and Realtime
    publication membership. Follow the runbook doc linked above exactly; the last three
    `alter publication` statements are **not** safe to re-run as-is.
+3. `supabase/admin_schema.sql` — the `admin_list_profiles()` RPC backing the real admin user
+   directory. Safe to re-run (`create or replace function`).
+
+To make a user an admin (there's no self-service UI for this — `role` is deliberately not settable
+by a signed-up user, see limitation #7 below): `update public.profiles set role = 'admin' where
+email = '...';` in the SQL Editor.
 
 ### 4. Run the dev server
 
@@ -131,14 +137,32 @@ found; the fix approach is worth understanding since it shapes how new routes/pa
    `register()` now wrap the Supabase `signIn`/`signUp` calls (`guardNetwork()`) so a fetch-level
    throw (project unreachable, DNS, timeout) surfaces a friendly message instead of the raw
    exception text — reproduced locally as `{"error":"fetch failed"}` before the fix.
-4. **Admin user listing is mocked** (`lib/services/adminService.ts`, tagged `PHASE2`) — returns
-   `ADMIN_USER_DIRECTORY` from `lib/mockData.ts` regardless of what's actually in Supabase. The
-   admin role check on top of it (`app/api/admin/users/route.ts`, via `requireAdminSession()`) is
-   real.
-5. **No automated tests and no CI.** No test runner is configured (`package.json` has no `test`
+4. ~~Admin user listing was mocked~~ **Fixed.** `lib/services/adminService.ts` now calls the
+   `admin_list_profiles()` Postgres RPC (`supabase/admin_schema.sql`) instead of returning
+   `ADMIN_USER_DIRECTORY`'s 8 fabricated rows. RLS only lets a user read their own `profiles` row,
+   so the RPC is `security definer` and checks the caller is actually an admin before returning
+   anything — same pattern as the Let's Play RPCs. Every real signed-up user now shows up instead
+   of the old fake directory; `scores`/`overallScore` are honestly empty for all of them (see #6
+   below — there's no real attempt history yet to aggregate).
+5. ~~Dashboard/readiness/Killing Questions ignored who was actually logged in~~ **Fixed.**
+   `getExamAttempts()`, `getReadinessReport()`, `getAllWeakestSkills()`, and `getKillingQuestions()`
+   always read the fixed `EXAM_ATTEMPTS` demo history (tagged `userId: DEMO_USER.id`) regardless of
+   the session — a brand-new user saw the demo account's populated charts on first login. All four
+   now take the real session's user ID and filter by it, so only the demo account sees demo data;
+   every other user correctly sees a zero/empty state until they take something.
+6. **No real exam-attempt persistence.** Finishing a full exam (`app/exam/dsat/page.tsx`'s
+   `finishExam()`) doesn't write anywhere — it's a static "Exam Submitted" placeholder. Nothing
+   feeds real data into readiness scoring, the dashboard, or the admin directory's per-user scores
+   yet; `EXAM_ATTEMPTS` in `lib/mockData.ts` is the only source, and it's fixed demo content.
+7. **`profiles` RLS allows self-promotion to admin.** The `"Users can update their own profile"`
+   policy in `supabase/schema.sql` has no column restriction, so any logged-in user can currently
+   run `supabase.from('profiles').update({role:'admin'}).eq('id', auth.uid())` from the browser
+   console and grant themselves admin. Needs either a narrower RLS policy (exclude `role` from
+   self-service updates) or a trigger that rejects a caller changing their own `role`.
+8. **No automated tests and no CI.** No test runner is configured (`package.json` has no `test`
    script) and there's no `.github/workflows`. Verification today is manual (`npm run lint`,
    `tsc --noEmit`, `npm run build`, and hand-testing) — this is exactly how the gaps above were
-   found and how the fix was verified.
+   found and how each fix was verified.
 
 What "end-to-end" did and didn't cover in this pass: without real Supabase/Anthropic credentials,
 protected pages correctly redirect to `/login` (verified with placeholder Supabase env vars — an
