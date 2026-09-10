@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireRateLimit, requireSession } from "@/lib/services/apiAuth";
 import { getDsatExamBundle } from "@/lib/services/examService";
 
 // Module 1 for both domains is a real Claude call (thinking + up to 3 retries) — give it room to
@@ -6,6 +7,12 @@ import { getDsatExamBundle } from "@/lib/services/examService";
 export const maxDuration = 60;
 
 export async function GET() {
+  const auth = await requireSession();
+  if (auth.response) return auth.response;
+
+  const limited = requireRateLimit(auth.session.user.id, "exam-dsat", 5, 10 * 60 * 1000);
+  if (limited) return limited;
+
   try {
     const bundle = await getDsatExamBundle();
     return NextResponse.json(bundle);

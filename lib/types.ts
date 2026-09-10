@@ -86,6 +86,11 @@ export interface AnswerChoice {
   text: string;
 }
 
+/** "grid-in" = a free numeric-entry question with no answer choices (the Digital SAT Math
+ *  section's "student-produced response" format). Absent/undefined means "multiple-choice", so
+ *  every existing question source (mockData.ts, killingQuestionsService.ts, etc.) stays valid. */
+export type QuestionFormat = "multiple-choice" | "grid-in";
+
 export interface Question {
   id: string;
   examType: ExamType;
@@ -94,8 +99,13 @@ export interface Question {
   skillName: string;
   prompt: string;
   passage?: string;
+  format?: QuestionFormat;
   choices: AnswerChoice[];
   correctChoiceId: string;
+  /** grid-in only: every distinct correct value, each as one canonical string a student's
+   *  differently-formatted-but-equivalent entry (e.g. "3/4" vs "0.75") should still match against —
+   *  see lib/utils/gridIn.ts for the numeric-equivalence comparison. */
+  acceptedAnswers?: string[];
   difficulty: Difficulty;
   explanation: string;
   /** e.g. "DSAT · Math" — a display-friendly grouping label, used by Let's Play's category badge. */
@@ -104,6 +114,11 @@ export interface Question {
    *  correct answer. Populated by generateExamQuestions(); optional so older static question data
    *  (mockData.ts) stays valid without a migration. */
   tip?: string;
+  /** false only for the ~2-per-module Digital SAT "pretest" questions real Bluebook embeds
+   *  indistinguishably among the scored ones — excluded from adaptive routing and (eventually)
+   *  scoring, but never shown differently to the student. Absent/true = scored, so every other
+   *  question source is unaffected. */
+  scored?: boolean;
 }
 
 /** Drives the DSAT/AP module timers and the IELTS Listening/Reading sections. */
@@ -187,6 +202,7 @@ export interface SmartStudioGradedResult {
 /** A user-uploaded test paper (document, photo, or screenshot) processed by Smart Studio. */
 export interface SmartStudioTest {
   id: string;
+  userId: string;
   fileName: string;
   fileType: string;
   fileSizeBytes: number;
@@ -202,6 +218,7 @@ export type UploadedExamSourceType = "document" | "url";
 /** A past test the user uploaded (or pointed to via URL) that was assembled into a full, timed exam. */
 export interface UploadedExam {
   id: string;
+  userId: string;
   examType: ExamType;
   sourceType: UploadedExamSourceType;
   sourceName: string; // file name, or the URL it was extracted from

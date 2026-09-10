@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireRateLimit, requireSession } from "@/lib/services/apiAuth";
 import { getApExamBundle } from "@/lib/services/examService";
 
 // Each subject module is a real Claude call (thinking + up to 3 retries) — give it room to finish
@@ -6,6 +7,12 @@ import { getApExamBundle } from "@/lib/services/examService";
 export const maxDuration = 60;
 
 export async function GET() {
+  const auth = await requireSession();
+  if (auth.response) return auth.response;
+
+  const limited = requireRateLimit(auth.session.user.id, "exam-ap", 5, 10 * 60 * 1000);
+  if (limited) return limited;
+
   try {
     const bundle = await getApExamBundle();
     return NextResponse.json(bundle);

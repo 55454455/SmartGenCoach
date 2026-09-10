@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireRateLimit, requireSession } from "@/lib/services/apiAuth";
 import { getIeltsListeningBundle, getIeltsSpeakingPrompts, getQuestionsByDomain } from "@/lib/services/examService";
 import type { IeltsDomain } from "@/lib/types";
 
@@ -14,12 +15,18 @@ function isIeltsDomain(value: string): value is IeltsDomain {
 export const maxDuration = 60;
 
 export async function GET(request: Request) {
+  const auth = await requireSession();
+  if (auth.response) return auth.response;
+
   const { searchParams } = new URL(request.url);
   const section = searchParams.get("section") ?? "Listening";
 
   if (!isIeltsDomain(section)) {
     return NextResponse.json({ error: "Invalid section." }, { status: 400 });
   }
+
+  const limited = requireRateLimit(auth.session.user.id, "exam-ielts", 10, 10 * 60 * 1000);
+  if (limited) return limited;
 
   try {
     if (section === "Listening") {

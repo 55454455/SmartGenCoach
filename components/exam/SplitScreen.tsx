@@ -1,7 +1,7 @@
 "use client";
 
 import { GripVertical } from "lucide-react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 
 interface SplitScreenProps {
@@ -14,6 +14,7 @@ export function SplitScreen({ left, right }: SplitScreenProps) {
   const [leftWidthPct, setLeftWidthPct] = useState(50);
   const containerRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef(false);
+  const dragAbortRef = useRef<AbortController | null>(null);
 
   const handlePointerMove = useCallback((event: PointerEvent) => {
     if (!draggingRef.current || !containerRef.current) return;
@@ -24,15 +25,19 @@ export function SplitScreen({ left, right }: SplitScreenProps) {
 
   const stopDragging = useCallback(() => {
     draggingRef.current = false;
-    window.removeEventListener("pointermove", handlePointerMove);
-    window.removeEventListener("pointerup", stopDragging);
-  }, [handlePointerMove]);
+    dragAbortRef.current?.abort();
+    dragAbortRef.current = null;
+  }, []);
 
   const startDragging = useCallback(() => {
     draggingRef.current = true;
-    window.addEventListener("pointermove", handlePointerMove);
-    window.addEventListener("pointerup", stopDragging);
+    const controller = new AbortController();
+    dragAbortRef.current = controller;
+    window.addEventListener("pointermove", handlePointerMove, { signal: controller.signal });
+    window.addEventListener("pointerup", stopDragging, { signal: controller.signal });
   }, [handlePointerMove, stopDragging]);
+
+  useEffect(() => () => dragAbortRef.current?.abort(), []);
 
   const leftPaneStyle: CSSProperties & Record<"--split-left", string> = {
     "--split-left": `${leftWidthPct}%`,

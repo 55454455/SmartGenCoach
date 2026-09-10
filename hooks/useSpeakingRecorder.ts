@@ -28,7 +28,9 @@ export function useSpeakingRecorder(maxSeconds: number): UseSpeakingRecorderResu
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<BlobPart[]>([]);
   const maxSecondsRef = useRef(maxSeconds);
-  maxSecondsRef.current = maxSeconds;
+  useEffect(() => {
+    maxSecondsRef.current = maxSeconds;
+  }, [maxSeconds]);
 
   const clearTimer = useCallback(() => {
     if (intervalRef.current) {

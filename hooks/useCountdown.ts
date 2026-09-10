@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useResetOnKeyChange } from "./useResetOnKeyChange";
 
 interface UseCountdownOptions {
   onExpire?: () => void;
@@ -10,11 +11,11 @@ interface UseCountdownOptions {
 export function useCountdown(durationSeconds: number, { onExpire, paused = false }: UseCountdownOptions = {}) {
   const [secondsLeft, setSecondsLeft] = useState(durationSeconds);
   const onExpireRef = useRef(onExpire);
-  onExpireRef.current = onExpire;
-
   useEffect(() => {
-    setSecondsLeft(durationSeconds);
-  }, [durationSeconds]);
+    onExpireRef.current = onExpire;
+  }, [onExpire]);
+
+  useResetOnKeyChange(durationSeconds, () => setSecondsLeft(durationSeconds));
 
   useEffect(() => {
     if (paused) return;

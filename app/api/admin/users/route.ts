@@ -1,15 +1,15 @@
 import { NextResponse } from "next/server";
-import { getCurrentSession } from "@/lib/services/authService";
+import { requireAdminSession } from "@/lib/services/apiAuth";
 import { getAllUsers } from "@/lib/services/adminService";
 
-// TODO: getAllUsers() still returns mock rows — real user listing needs a service-role
-// query against `profiles` (or a Postgres function), since RLS only lets a user read their
-// own row. The role check below is real: it queries the caller's own profiles.role.
+// Real per-user data — never cache (see app/api/dashboard/route.ts for why).
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export async function GET() {
-  const session = await getCurrentSession();
-  if (!session || session.user.role !== "admin") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const auth = await requireAdminSession();
+  if (auth.response) return auth.response;
+
   const users = await getAllUsers();
-  return NextResponse.json(users);
+  return NextResponse.json(users, { headers: { "Cache-Control": "no-store, no-cache, must-revalidate" } });
 }

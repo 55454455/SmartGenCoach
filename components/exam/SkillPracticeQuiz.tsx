@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { CheckCircle2, XCircle } from "lucide-react";
+import { CheckCircle2, Lightbulb, XCircle } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -16,30 +16,68 @@ interface SkillPracticeQuizProps {
   accent: Accent;
 }
 
+interface AnsweredQuestion {
+  question: Question;
+  correct: boolean;
+}
+
 export function SkillPracticeQuiz({ title, questions, accent }: SkillPracticeQuizProps) {
   const [index, setIndex] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
-  const [correctCount, setCorrectCount] = useState(0);
+  const [answered, setAnswered] = useState<AnsweredQuestion[]>([]);
   const [finished, setFinished] = useState(false);
 
   if (questions.length === 0) {
     return <p className="text-sm text-foreground-muted">No practice questions available for this skill yet.</p>;
   }
 
+  const correctCount = answered.filter((a) => a.correct).length;
+
   if (finished) {
+    // One representative tip per skill the student actually missed — not every question, since a
+    // small set often repeats the same skill and repeating its tip verbatim adds nothing.
+    const missedSkills: Question[] = [];
+    const seenSkillIds = new Set<string>();
+    for (const a of answered) {
+      if (!a.correct && !seenSkillIds.has(a.question.skillId)) {
+        seenSkillIds.add(a.question.skillId);
+        missedSkills.push(a.question);
+      }
+    }
+    const scorePct = Math.round((correctCount / questions.length) * 100);
+
     return (
       <Card className="text-center">
         <h2 className="text-lg font-semibold text-foreground">Practice complete</h2>
         <p className="mt-2 text-foreground-muted">
-          You scored <span className="font-semibold text-foreground">{correctCount}</span> out of {questions.length}.
+          You scored <span className="font-semibold text-foreground">{correctCount}</span> out of {questions.length} (
+          {scorePct}%).
         </p>
+
+        {missedSkills.length > 0 ? (
+          <div className="mt-5 flex flex-col gap-2 text-left">
+            <h3 className="text-sm font-semibold text-foreground">Focus on these next</h3>
+            {missedSkills.map((q) => (
+              <div key={q.skillId} className="flex gap-2 rounded-lg bg-surface-muted p-3">
+                <Lightbulb size={16} className="mt-0.5 shrink-0 text-amber-500" aria-hidden="true" />
+                <div>
+                  <p className="text-sm font-medium text-foreground">{q.skillName}</p>
+                  {q.tip && <p className="mt-0.5 text-sm text-foreground-muted">{q.tip}</p>}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-4 text-sm text-foreground-muted">Perfect set — no weak spots to flag this time.</p>
+        )}
+
         <Button
-          className="mt-4"
+          className="mt-5"
           accent={accent}
           onClick={() => {
             setIndex(0);
             setSelected(null);
-            setCorrectCount(0);
+            setAnswered([]);
             setFinished(false);
           }}
         >
@@ -56,9 +94,7 @@ export function SkillPracticeQuiz({ title, questions, accent }: SkillPracticeQui
   function handleSelect(choiceId: string) {
     if (isAnswered) return;
     setSelected(choiceId);
-    if (choiceId === question.correctChoiceId) {
-      setCorrectCount((c) => c + 1);
-    }
+    setAnswered((a) => [...a, { question, correct: choiceId === question.correctChoiceId }]);
   }
 
   function handleNext() {
@@ -129,13 +165,15 @@ export function SkillPracticeQuiz({ title, questions, accent }: SkillPracticeQui
               })}
             </div>
             {isAnswered && (
-              <motion.p
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="mt-4 rounded-lg bg-surface-muted p-3 text-sm text-foreground-muted"
-              >
-                {question.explanation}
-              </motion.p>
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mt-4 flex flex-col gap-2">
+                <p className="rounded-lg bg-surface-muted p-3 text-sm text-foreground-muted">{question.explanation}</p>
+                {question.tip && (
+                  <p className="flex items-start gap-2 rounded-lg bg-amber-500/10 p-3 text-sm text-foreground">
+                    <Lightbulb size={16} className="mt-0.5 shrink-0 text-amber-500" aria-hidden="true" />
+                    <span>{question.tip}</span>
+                  </p>
+                )}
+              </motion.div>
             )}
           </Card>
         </motion.div>

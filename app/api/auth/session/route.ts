@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
-import { getCurrentSession } from "@/lib/services/authService";
+import { requireSession } from "@/lib/services/apiAuth";
 
 export async function GET() {
-  const session = await getCurrentSession();
-  if (!session) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-  }
-  return NextResponse.json(session);
+  const auth = await requireSession();
+  if (auth.response) return auth.response;
+
+  return NextResponse.json(auth.session);
 }

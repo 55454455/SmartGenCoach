@@ -14,10 +14,11 @@ export function AdminGuard({ children }: { children: ReactNode }) {
   const isAdmin = session?.user.role === "admin";
 
   useEffect(() => {
-    if (hasHydrated && !isAdmin) {
-      router.replace("/dashboard");
-    }
-  }, [hasHydrated, isAdmin, router]);
+    if (!hasHydrated || isAdmin) return;
+    // No session at all (shouldn't normally happen — the (app) layout's AuthGuard wraps every
+    // route here — but don't claim "you're logged in but not admin" when nobody is logged in).
+    router.replace(session ? "/dashboard" : "/login");
+  }, [hasHydrated, isAdmin, session, router]);
 
   if (!hasHydrated || !isAdmin) {
     return <Spinner label="Checking permissions…" />;

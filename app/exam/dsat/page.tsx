@@ -15,11 +15,12 @@ import type { DsatExamBundle } from "@/lib/services/examService";
 import { useAuthStore } from "@/lib/store/authStore";
 import { useDsatExamStore } from "@/lib/store/dsatExamStore";
 import { cn } from "@/lib/utils/cn";
+import { isAnswerCorrect } from "@/lib/utils/gridIn";
 
 const DIRECTIONS: Record<string, string> = {
   "Reading and Writing":
     "The passages in this section are followed by a question. Read each passage and then choose the best answer to the accompanying question. All questions are multiple-choice with four possible answers.",
-  Math: "You may use a calculator for this module. All variables and expressions represent real numbers unless otherwise indicated. For multiple-choice questions, solve each problem and choose the best answer from the four choices provided.",
+  Math: "You may use a calculator for this module. All variables and expressions represent real numbers unless otherwise indicated. Most questions are multiple-choice with four possible answers; some ask you to enter your own numeric answer instead — for those, enter the exact value or an equivalent fraction/decimal.",
 };
 
 export default function DsatExamPage() {
@@ -64,17 +65,21 @@ export default function DsatExamPage() {
     if (resetOnce.current) return;
     resetOnce.current = true;
     reset();
+    let cancelled = false;
     fetch("/api/exam/dsat")
       .then(async (res) => {
         const data = (await res.json()) as DsatExamBundle | { error: string };
         if (!res.ok || "error" in data) {
           throw new Error("error" in data ? data.error : "Could not generate this exam.");
         }
-        setBundle(data);
+        if (!cancelled) setBundle(data);
       })
       .catch((err: unknown) => {
-        setLoadError(err instanceof Error ? err.message : "Could not generate this exam.");
+        if (!cancelled) setLoadError(err instanceof Error ? err.message : "Could not generate this exam.");
       });
+    return () => {
+      cancelled = true;
+    };
   }, [reset]);
 
   const currentModule = bundle?.modules[currentModuleIndex];
@@ -98,9 +103,15 @@ export default function DsatExamPage() {
       advancingRef.current = true;
       setModuleTransitionLoading(true);
       const priorModule = bundle.modules[nextIndex - 1];
-      const total = priorModule?.questionIds.length ?? 0;
-      const correctCount = (priorModule?.questionIds ?? []).filter(
-        (qid) => answers[qid] && answers[qid] === bundle.questionsById[qid]?.correctChoiceId,
+      // The ~2 unscored "pretest" questions per module (see markPretestQuestions in
+      // examService.ts) never count toward adaptive routing, matching real Bluebook — a student
+      // can't tell which ones they are, but they don't move the needle either way.
+      const scoredQuestionIds = (priorModule?.questionIds ?? []).filter(
+        (qid) => bundle.questionsById[qid]?.scored !== false,
+      );
+      const total = scoredQuestionIds.length;
+      const correctCount = scoredQuestionIds.filter((qid) =>
+        isAnswerCorrect(bundle.questionsById[qid], answers[qid]),
       ).length;
 
       try {
@@ -218,6 +229,7 @@ export default function DsatExamPage() {
 
   const selectedChoiceId = answers[currentQuestionId];
   const eliminatedChoiceIds = eliminated[currentQuestionId] ?? [];
+  const isGridIn = currentQuestion.format === "grid-in";
 
   const questionPane = (
     <div className="flex flex-col gap-4">
@@ -227,56 +239,77 @@ export default function DsatExamPage() {
         </span>
       </div>
       <p className="text-base leading-relaxed text-foreground">{currentQuestion.prompt}</p>
-      <div className="flex flex-col gap-2.5">
-        {currentQuestion.choices.map((choice, idx) => {
-          const letter = String.fromCharCode(65 + idx);
-          const isSelected = selectedChoiceId === choice.id;
-          const isEliminated = eliminatedChoiceIds.includes(choice.id);
+      {isGridIn ? (
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="grid-in-answer" className="text-xs font-medium text-foreground-muted">
+            Enter your answer
+          </label>
+          <input
+            id="grid-in-answer"
+            type="text"
+            inputMode="decimal"
+            autoComplete="off"
+            value={selectedChoiceId ?? ""}
+            onChange={(e) => selectAnswer(currentQuestionId, e.target.value)}
+            placeholder="e.g. 3/4 or 0.75"
+            className="w-44 rounded-lg border border-border bg-surface px-3.5 py-2.5 text-center font-mono text-lg text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-dsat"
+          />
+          <p className="text-xs text-foreground-muted">
+            Enter a whole number, decimal, or fraction. Equivalent forms (e.g. 3/4 and 0.75) are both accepted.
+          </p>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2.5">
+          {currentQuestion.choices.map((choice, idx) => {
+            const letter = String.fromCharCode(65 + idx);
+            const isSelected = selectedChoiceId === choice.id;
+            const isEliminated = eliminatedChoiceIds.includes(choice.id);
 
-          return (
-            <div key={choice.id} className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  if (eliminatorMode) {
-                    toggleEliminated(currentQuestionId, choice.id);
-                  } else if (!isEliminated) {
-                    selectAnswer(currentQuestionId, choice.id);
-                  }
-                }}
-                disabled={!eliminatorMode && isEliminated}
-                className={cn(
-                  "flex flex-1 items-center gap-3 rounded-lg border px-3 py-2.5 text-left text-sm transition-colors",
-                  isSelected
-                    ? "border-dsat bg-dsat-soft text-foreground"
-                    : "border-border bg-surface hover:bg-surface-muted",
-                  isEliminated && !eliminatorMode && "opacity-50",
-                )}
-              >
-                <span
-                  className={cn(
-                    "flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-xs font-semibold",
-                    isSelected ? "border-dsat bg-dsat text-white" : "border-border text-foreground-muted",
-                  )}
-                >
-                  {letter}
-                </span>
-                <span className={cn(isEliminated && "line-through decoration-2")}>{choice.text}</span>
-              </button>
-              {isEliminated && !eliminatorMode && (
+            return (
+              <div key={choice.id} className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => toggleEliminated(currentQuestionId, choice.id)}
-                  aria-label={`Undo elimination of choice ${letter}`}
-                  className="rounded p-1 text-foreground-muted hover:bg-surface-muted hover:text-foreground"
+                  onClick={() => {
+                    if (eliminatorMode) {
+                      toggleEliminated(currentQuestionId, choice.id);
+                    } else if (!isEliminated) {
+                      selectAnswer(currentQuestionId, choice.id);
+                    }
+                  }}
+                  disabled={!eliminatorMode && isEliminated}
+                  className={cn(
+                    "flex flex-1 items-center gap-3 rounded-lg border px-3 py-2.5 text-left text-sm transition-colors",
+                    isSelected
+                      ? "border-dsat bg-dsat-soft text-foreground"
+                      : "border-border bg-surface hover:bg-surface-muted",
+                    isEliminated && !eliminatorMode && "opacity-50",
+                  )}
                 >
-                  <X size={14} aria-hidden="true" />
+                  <span
+                    className={cn(
+                      "flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-xs font-semibold",
+                      isSelected ? "border-dsat bg-dsat text-white" : "border-border text-foreground-muted",
+                    )}
+                  >
+                    {letter}
+                  </span>
+                  <span className={cn(isEliminated && "line-through decoration-2")}>{choice.text}</span>
                 </button>
-              )}
-            </div>
-          );
-        })}
-      </div>
+                {isEliminated && !eliminatorMode && (
+                  <button
+                    type="button"
+                    onClick={() => toggleEliminated(currentQuestionId, choice.id)}
+                    aria-label={`Undo elimination of choice ${letter}`}
+                    className="rounded p-1 text-foreground-muted hover:bg-surface-muted hover:text-foreground"
+                  >
+                    <X size={14} aria-hidden="true" />
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 

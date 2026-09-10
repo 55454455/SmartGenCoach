@@ -39,9 +39,15 @@ export function TopNav() {
   const navLinks = session?.user.role === "admin" ? [...NAV_LINKS, ADMIN_LINK] : NAV_LINKS;
 
   async function handleLogout() {
-    await createClient().auth.signOut();
-    logout();
-    router.replace("/login");
+    // Always clear the local cache and redirect, even if signOut() itself fails (network error) —
+    // otherwise a failed request leaves the previous user's name/avatar/role visible in the UI on
+    // a shared machine even though they intended to log out.
+    try {
+      await createClient().auth.signOut();
+    } finally {
+      logout();
+      router.replace("/login");
+    }
   }
 
   return (

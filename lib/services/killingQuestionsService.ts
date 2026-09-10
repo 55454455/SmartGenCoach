@@ -155,8 +155,8 @@ async function generateQuestionsForSkills(
   throw lastError instanceof Error ? lastError : new Error("Could not generate targeted practice questions.");
 }
 
-export async function getKillingQuestions(examType: ExamType): Promise<KillingQuestionsResult> {
-  const report = await getReadinessReport(examType);
+export async function getKillingQuestions(examType: ExamType, userId: string): Promise<KillingQuestionsResult> {
+  const report = await getReadinessReport(userId, examType);
   if (!report.unlocked) {
     return { unlocked: false, readinessScore: report.readinessScore, threshold: report.threshold, targeted: [] };
   }

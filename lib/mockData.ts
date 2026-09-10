@@ -2,7 +2,6 @@
 // PHASE2: every export here is replaced by a Supabase query or an agent response —
 // the shapes (lib/types.ts) do not change, only where the data comes from.
 import type {
-  AdminUserRow,
   AgentFeedback,
   ApDomain,
   DsatDomain,
@@ -12,9 +11,7 @@ import type {
   IeltsDomain,
   ListeningCue,
   Question,
-  ReadinessReport,
   SkillScore,
-  SmartStudioQuestion,
   SmartStudioTest,
   SpeakingPrompt,
   UploadedExam,
@@ -45,74 +42,8 @@ export const ADMIN_USER: UserProfile = {
   role: "admin",
 };
 
-// PHASE2: replaced by a Supabase query joining `profiles` with aggregated `readiness_reports`,
-// scoped by an admin-only RLS policy.
-export const ADMIN_USER_DIRECTORY: AdminUserRow[] = [
-  {
-    id: DEMO_USER.id,
-    name: DEMO_USER.name,
-    email: DEMO_USER.email,
-    createdAt: DEMO_USER.createdAt,
-    scores: { DSAT: 83, AP: 80, IELTS: 76 },
-    overallScore: 80,
-  },
-  {
-    id: "user_002",
-    name: "Marcus Webb",
-    email: "marcus.webb@example.com",
-    createdAt: "2026-02-14T11:20:00.000Z",
-    scores: { DSAT: 91, AP: 88 },
-    overallScore: 90,
-  },
-  {
-    id: "user_003",
-    name: "Priya Nair",
-    email: "priya.nair@example.com",
-    createdAt: "2026-03-01T08:45:00.000Z",
-    scores: { IELTS: 85 },
-    overallScore: 85,
-  },
-  {
-    id: "user_004",
-    name: "Diego Fernandez",
-    email: "diego.fernandez@example.com",
-    createdAt: "2026-03-18T15:30:00.000Z",
-    scores: { DSAT: 62, AP: 58 },
-    overallScore: 60,
-  },
-  {
-    id: "user_005",
-    name: "Hana Kimura",
-    email: "hana.kimura@example.com",
-    createdAt: "2026-04-05T10:05:00.000Z",
-    scores: { DSAT: 74, IELTS: 91 },
-    overallScore: 83,
-  },
-  {
-    id: "user_006",
-    name: "Tunde Adeyemi",
-    email: "tunde.adeyemi@example.com",
-    createdAt: "2026-05-02T13:10:00.000Z",
-    scores: { AP: 95 },
-    overallScore: 95,
-  },
-  {
-    id: "user_007",
-    name: "Sofia Marchetti",
-    email: "sofia.marchetti@example.com",
-    createdAt: "2026-05-20T09:55:00.000Z",
-    scores: { DSAT: 55, AP: 61, IELTS: 68 },
-    overallScore: 61,
-  },
-  {
-    id: "user_008",
-    name: "Owen Baptiste",
-    email: "owen.baptiste@example.com",
-    createdAt: "2026-06-11T17:40:00.000Z",
-    scores: { DSAT: 78 },
-    overallScore: 78,
-  },
-];
+// Real admin user listing now goes through the admin_list_profiles() Supabase RPC
+// (see lib/services/adminService.ts and supabase/admin_schema.sql) instead of mock data.
 
 // ---------------------------------------------------------------------------
 // Skill catalog — the fixed taxonomy of sub-skills per exam/domain.
@@ -123,21 +54,24 @@ interface SkillDef {
   skillName: string;
   examType: ExamType;
   domain: DsatDomain | ApDomain | IeltsDomain;
+  // DSAT only: which of College Board's 4 official content domains (per section) this skill
+  // belongs to. Drives DSAT_CONTENT_DOMAIN_TARGETS below — every other exam type ignores this.
+  contentDomain?: string;
 }
 
 export const SKILL_CATALOG: SkillDef[] = [
-  // DSAT Math
-  { skillId: "dsat-math-linear-eq", skillName: "Linear Equations", examType: "DSAT", domain: "Math" },
-  { skillId: "dsat-math-systems", skillName: "Systems of Equations", examType: "DSAT", domain: "Math" },
-  { skillId: "dsat-math-quadratics", skillName: "Quadratic Functions", examType: "DSAT", domain: "Math" },
-  { skillId: "dsat-math-ratios", skillName: "Ratios & Proportions", examType: "DSAT", domain: "Math" },
-  { skillId: "dsat-math-stats", skillName: "Statistics & Probability", examType: "DSAT", domain: "Math" },
-  { skillId: "dsat-math-geometry", skillName: "Geometry & Trigonometry", examType: "DSAT", domain: "Math" },
-  // DSAT Reading and Writing
-  { skillId: "dsat-rw-craft", skillName: "Craft and Structure", examType: "DSAT", domain: "Reading and Writing" },
-  { skillId: "dsat-rw-info", skillName: "Information and Ideas", examType: "DSAT", domain: "Reading and Writing" },
-  { skillId: "dsat-rw-conventions", skillName: "Standard English Conventions", examType: "DSAT", domain: "Reading and Writing" },
-  { skillId: "dsat-rw-expression", skillName: "Expression of Ideas", examType: "DSAT", domain: "Reading and Writing" },
+  // DSAT Math — contentDomain matches College Board's 4 official Math content domains.
+  { skillId: "dsat-math-linear-eq", skillName: "Linear Equations", examType: "DSAT", domain: "Math", contentDomain: "Algebra" },
+  { skillId: "dsat-math-systems", skillName: "Systems of Equations", examType: "DSAT", domain: "Math", contentDomain: "Algebra" },
+  { skillId: "dsat-math-quadratics", skillName: "Quadratic Functions", examType: "DSAT", domain: "Math", contentDomain: "Advanced Math" },
+  { skillId: "dsat-math-ratios", skillName: "Ratios & Proportions", examType: "DSAT", domain: "Math", contentDomain: "Problem-Solving and Data Analysis" },
+  { skillId: "dsat-math-stats", skillName: "Statistics & Probability", examType: "DSAT", domain: "Math", contentDomain: "Problem-Solving and Data Analysis" },
+  { skillId: "dsat-math-geometry", skillName: "Geometry & Trigonometry", examType: "DSAT", domain: "Math", contentDomain: "Geometry and Trigonometry" },
+  // DSAT Reading and Writing — College Board's 4 official R&W content domains, 1:1 with these skills.
+  { skillId: "dsat-rw-craft", skillName: "Craft and Structure", examType: "DSAT", domain: "Reading and Writing", contentDomain: "Craft and Structure" },
+  { skillId: "dsat-rw-info", skillName: "Information and Ideas", examType: "DSAT", domain: "Reading and Writing", contentDomain: "Information and Ideas" },
+  { skillId: "dsat-rw-conventions", skillName: "Standard English Conventions", examType: "DSAT", domain: "Reading and Writing", contentDomain: "Standard English Conventions" },
+  { skillId: "dsat-rw-expression", skillName: "Expression of Ideas", examType: "DSAT", domain: "Reading and Writing", contentDomain: "Expression of Ideas" },
   // AP Calculus
   { skillId: "ap-calc-limits", skillName: "Limits & Continuity", examType: "AP", domain: "Calculus" },
   { skillId: "ap-calc-derivatives", skillName: "Derivatives", examType: "AP", domain: "Calculus" },
@@ -756,8 +690,35 @@ export const QUESTION_BANK: Question[] = [
 export const QUESTION_BY_ID = new Map(QUESTION_BANK.map((q) => [q.id, q]));
 
 // ---------------------------------------------------------------------------
-// DSAT exam modules — mirrors Bluebook's real module durations.
+// DSAT exam modules — mirrors Bluebook's real module durations. The questionIds arrays below are
+// illustrative placeholders only (into the static QUESTION_BANK) — the real per-attempt question
+// count and content-domain mix come from DSAT_CONTENT_DOMAIN_TARGETS, not from these arrays'
+// length, since a real attempt always generates fresh questions rather than using this bank.
 // ---------------------------------------------------------------------------
+
+// Real Bluebook per-module question counts (27 for Reading and Writing, 22 for Math — identical
+// in Module 1 and Module 2 of a section) broken down by College Board's official content domains.
+// College Board's Digital SAT Assessment Framework publishes these as section-wide *ranges*, not
+// fixed per-module integers (Craft and Structure 13–15, Information and Ideas 12–14, Standard
+// English Conventions 11–15, Expression of Ideas 8–12 of the 54 R&W questions; Algebra 13–15,
+// Advanced Math 13–15, Problem-Solving and Data Analysis 5–7, Geometry and Trigonometry 5–7 of the
+// 44 Math questions) so forms can vary module-to-module — there is no single official fixed
+// breakdown to match exactly. The counts below are chosen to (a) sum to exactly the real per-module
+// total and (b) land close to the midpoint of each official range.
+export const DSAT_CONTENT_DOMAIN_TARGETS: Record<DsatDomain, { contentDomain: string; count: number }[]> = {
+  "Reading and Writing": [
+    { contentDomain: "Craft and Structure", count: 8 },
+    { contentDomain: "Information and Ideas", count: 7 },
+    { contentDomain: "Standard English Conventions", count: 7 },
+    { contentDomain: "Expression of Ideas", count: 5 },
+  ],
+  Math: [
+    { contentDomain: "Algebra", count: 8 },
+    { contentDomain: "Advanced Math", count: 8 },
+    { contentDomain: "Problem-Solving and Data Analysis", count: 3 },
+    { contentDomain: "Geometry and Trigonometry", count: 3 },
+  ],
+};
 
 export const DSAT_MODULES: ExamModule[] = [
   {
@@ -1214,150 +1175,9 @@ export const READINESS_THRESHOLDS: Record<ExamType, number> = {
 
 // ---------------------------------------------------------------------------
 // Smart Studio — upload any test paper, doc, or screenshot for AI recognition + grading.
-// PHASE2: this pool stands in for a vision/OCR extraction pipeline that reads the actual
-// uploaded file. Real extraction would produce paper-specific questions instead of drawing
-// from a fixed bank, and would generate the answer key + explanations directly from the source.
+// Real extraction (lib/services/smartStudioService.ts's Claude vision/document call) reads the
+// actual uploaded file, so no mock question pool is needed here.
 // ---------------------------------------------------------------------------
-
-export const SMART_STUDIO_QUESTION_POOL: Omit<SmartStudioQuestion, "id">[] = [
-  {
-    prompt: "Which choice best states the main idea of the passage?",
-    passage:
-      "Urban beekeeping has grown quickly in the last decade, with hobbyists installing hives on rooftops and in community gardens. Proponents argue that city bees produce comparable honey yields to rural colonies while pollinating a wider variety of ornamental and food plants.",
-    choices: [
-      { id: "a", text: "City beekeeping is illegal in most municipalities." },
-      { id: "b", text: "Urban beekeeping has expanded and may offer pollination benefits comparable to rural hives." },
-      { id: "c", text: "Rural honey is of higher quality than urban honey." },
-      { id: "d", text: "Community gardens are declining in popularity." },
-    ],
-    correctChoiceId: "b",
-    explanation:
-      "The passage's central claim is that urban beekeeping has grown and can match rural yields while pollinating diverse plants — choice B restates this directly; the others contradict or aren't supported by the text.",
-  },
-  {
-    prompt: "If 5x - 3 = 2x + 12, what is the value of x?",
-    choices: [
-      { id: "a", text: "3" },
-      { id: "b", text: "5" },
-      { id: "c", text: "9" },
-      { id: "d", text: "15" },
-    ],
-    correctChoiceId: "b",
-    explanation: "Subtract 2x from both sides: 3x - 3 = 12. Add 3: 3x = 15. Divide by 3: x = 5.",
-  },
-  {
-    prompt: "Which word most nearly means \"ephemeral\" as it is commonly used?",
-    choices: [
-      { id: "a", text: "Everlasting" },
-      { id: "b", text: "Short-lived" },
-      { id: "c", text: "Massive" },
-      { id: "d", text: "Transparent" },
-    ],
-    correctChoiceId: "b",
-    explanation: "\"Ephemeral\" describes something that lasts for a very short time, making \"short-lived\" the closest synonym.",
-  },
-  {
-    prompt: "A car travels 240 miles using 8 gallons of gas. At this rate, how many miles can it travel on 5 gallons?",
-    choices: [
-      { id: "a", text: "120" },
-      { id: "b", text: "150" },
-      { id: "c", text: "160" },
-      { id: "d", text: "180" },
-    ],
-    correctChoiceId: "b",
-    explanation: "The car gets 240 / 8 = 30 miles per gallon. At 30 mpg, 5 gallons covers 30 x 5 = 150 miles.",
-  },
-  {
-    prompt: "Which sentence uses correct subject-verb agreement?",
-    choices: [
-      { id: "a", text: "The list of items are on the table." },
-      { id: "b", text: "The list of items is on the table." },
-      { id: "c", text: "The list of items were on the table." },
-      { id: "d", text: "The list of items be on the table." },
-    ],
-    correctChoiceId: "b",
-    explanation: "The subject is \"list\" (singular), not \"items,\" so it takes the singular verb \"is.\"",
-  },
-  {
-    prompt: "During photosynthesis, plants primarily convert light energy into which form of chemical energy?",
-    choices: [
-      { id: "a", text: "ATP and glucose" },
-      { id: "b", text: "Carbon dioxide" },
-      { id: "c", text: "Nitrogen compounds" },
-      { id: "d", text: "Water vapor" },
-    ],
-    correctChoiceId: "a",
-    explanation: "Photosynthesis captures light energy and stores it in the chemical bonds of ATP and glucose, which the plant then uses for growth and metabolism.",
-  },
-  {
-    prompt: "What was a primary cause of the Bronze Age Collapse cited by historians?",
-    passage:
-      "Around 1200 BCE, several interconnected Mediterranean civilizations declined within a few generations. Historians point to a combination of factors: prolonged drought, crop failures, mass migrations of the so-called 'Sea Peoples,' and the breakdown of long-distance trade networks that had supplied tin and copper for bronze production.",
-    choices: [
-      { id: "a", text: "A single volcanic eruption destroyed all major cities at once." },
-      { id: "b", text: "A combination of drought, migration, and collapsed trade networks weakened the civilizations." },
-      { id: "c", text: "The civilizations voluntarily merged into one empire." },
-      { id: "d", text: "Bronze was replaced overnight by plastic tools." },
-    ],
-    correctChoiceId: "b",
-    explanation: "The passage lists multiple compounding causes — drought, migration, and broken trade networks — matching choice B; the other options aren't supported by the text.",
-  },
-  {
-    prompt: "Simplify: (3x^2)(4x^3)",
-    choices: [
-      { id: "a", text: "7x^5" },
-      { id: "b", text: "12x^5" },
-      { id: "c", text: "12x^6" },
-      { id: "d", text: "7x^6" },
-    ],
-    correctChoiceId: "b",
-    explanation: "Multiply coefficients (3 x 4 = 12) and add exponents (x^2 * x^3 = x^5), giving 12x^5.",
-  },
-  {
-    prompt: "Which choice best describes the author's tone in a passage that repeatedly uses words like \"regrettably,\" \"squandered,\" and \"missed opportunity\"?",
-    choices: [
-      { id: "a", text: "Celebratory" },
-      { id: "b", text: "Indifferent" },
-      { id: "c", text: "Critical" },
-      { id: "d", text: "Amused" },
-    ],
-    correctChoiceId: "c",
-    explanation: "Words like \"regrettably,\" \"squandered,\" and \"missed opportunity\" signal disapproval, so the tone is best described as critical.",
-  },
-  {
-    prompt: "A right triangle has legs of length 6 and 8. What is the length of the hypotenuse?",
-    choices: [
-      { id: "a", text: "9" },
-      { id: "b", text: "10" },
-      { id: "c", text: "12" },
-      { id: "d", text: "14" },
-    ],
-    correctChoiceId: "b",
-    explanation: "By the Pythagorean theorem, hypotenuse = sqrt(6^2 + 8^2) = sqrt(36 + 64) = sqrt(100) = 10.",
-  },
-  {
-    prompt: "Which choice most logically completes the sentence: \"Despite the storm warnings, the crew ______ to finish loading the ship before dawn.\"",
-    choices: [
-      { id: "a", text: "refused" },
-      { id: "b", text: "hesitated" },
-      { id: "c", text: "persisted" },
-      { id: "d", text: "forgot" },
-    ],
-    correctChoiceId: "c",
-    explanation: "\"Despite\" signals a contrast with difficulty, so the crew continuing to work anyway is best captured by \"persisted.\"",
-  },
-  {
-    prompt: "If a population of bacteria doubles every 3 hours and starts at 200, how many bacteria are there after 9 hours?",
-    choices: [
-      { id: "a", text: "800" },
-      { id: "b", text: "1,200" },
-      { id: "c", text: "1,600" },
-      { id: "d", text: "2,400" },
-    ],
-    correctChoiceId: "c",
-    explanation: "9 hours is 3 doubling periods: 200 -> 400 -> 800 -> 1,600.",
-  },
-];
 
 export function hashSeed(input: string): number {
   let hash = 0;
@@ -1367,43 +1187,10 @@ export function hashSeed(input: string): number {
   return hash;
 }
 
-function humanizeFileName(fileName: string): string {
-  const withoutExtension = fileName.replace(/\.[^/.]+$/, "");
-  const spaced = withoutExtension.replace(/[_-]+/g, " ").trim();
-  return spaced.length > 0 ? spaced : "Uploaded Test";
-}
-
-/** Deterministically "recognizes" a plausible question set from an uploaded file's name/size. */
-export function recognizeQuestionsForUpload(fileName: string, fileSizeBytes: number): SmartStudioQuestion[] {
-  const seed = hashSeed(fileName + fileSizeBytes);
-  const poolSize = SMART_STUDIO_QUESTION_POOL.length;
-  const count = 4 + (seed % 3); // 4-6 questions
-  const start = seed % poolSize;
-  return Array.from({ length: count }, (_, i) => {
-    const template = SMART_STUDIO_QUESTION_POOL[(start + i) % poolSize]!;
-    return { ...template, id: `sst-q-${seed}-${i}` };
-  });
-}
-
-export function detectedTitleForUpload(fileName: string): string {
-  return humanizeFileName(fileName);
-}
-
-// In-memory store for uploaded Smart Studio tests (Phase 1 has no real file storage/DB).
+// In-memory store for uploaded Smart Studio tests (Phase 1 has no real file storage/DB), shared
+// across all users of this server instance and filtered by userId in smartStudioService.ts.
 // PHASE2: replace with a Supabase table (`smart_studio_tests`) + object storage for the source file.
-export const SMART_STUDIO_TESTS: SmartStudioTest[] = [
-  {
-    id: "sst-seed-001",
-    fileName: "Chapter 4 Practice Test.pdf",
-    fileType: "application/pdf",
-    fileSizeBytes: 482_331,
-    uploadedAt: "2026-07-10T14:20:00.000Z",
-    status: "ready",
-    detectedTitle: "Chapter 4 Practice Test",
-    questions: recognizeQuestionsForUpload("Chapter 4 Practice Test.pdf", 482_331),
-    lastResult: undefined,
-  },
-];
+export const SMART_STUDIO_TESTS: SmartStudioTest[] = [];
 
 function humanizeSourceName(sourceName: string): string {
   const withoutProtocol = sourceName.replace(/^https?:\/\//, "").replace(/^www\./, "");

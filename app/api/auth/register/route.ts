@@ -3,7 +3,12 @@ import { register } from "@/lib/services/authService";
 import type { RegisterInput } from "@/lib/types";
 
 export async function POST(request: Request) {
-  const body = (await request.json()) as Partial<RegisterInput>;
+  let body: Partial<RegisterInput>;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
+  }
   if (!body.name || !body.email || !body.password) {
     return NextResponse.json({ error: "Name, email, and password are required." }, { status: 400 });
   }

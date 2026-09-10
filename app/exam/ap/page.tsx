@@ -62,17 +62,21 @@ export default function ApExamPage() {
     if (resetOnce.current) return;
     resetOnce.current = true;
     reset();
+    let cancelled = false;
     fetch("/api/exam/ap")
       .then(async (res) => {
         const data = (await res.json()) as ApExamBundle | { error: string };
         if (!res.ok || "error" in data) {
           throw new Error("error" in data ? data.error : "Could not generate this exam.");
         }
-        setBundle(data);
+        if (!cancelled) setBundle(data);
       })
       .catch((err: unknown) => {
-        setLoadError(err instanceof Error ? err.message : "Could not generate this exam.");
+        if (!cancelled) setLoadError(err instanceof Error ? err.message : "Could not generate this exam.");
       });
+    return () => {
+      cancelled = true;
+    };
   }, [reset]);
 
   const currentModule = bundle?.modules[currentModuleIndex];

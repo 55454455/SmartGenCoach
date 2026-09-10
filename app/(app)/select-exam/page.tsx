@@ -2,13 +2,14 @@
 
 import { ArrowLeft } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useState } from "react";
 import { ExamSourceUploader } from "@/components/exam/ExamSourceUploader";
 import { PageTransition } from "@/components/layout/PageTransition";
 import { Card } from "@/components/ui/Card";
 import { LinkButton } from "@/components/ui/LinkButton";
 import { Spinner } from "@/components/ui/Spinner";
 import { useExamTheme } from "@/hooks/useExamTheme";
+import { useResetOnKeyChange } from "@/hooks/useResetOnKeyChange";
 import { EXAM_META, EXAM_TYPES } from "@/lib/examMeta";
 import type { ExamType, PracticeMode, SkillDomain, UploadedExam } from "@/lib/types";
 import { accentForExam } from "@/lib/utils/accent";
@@ -43,12 +44,11 @@ function SelectExamContent() {
   const [examType, setExamType] = useState<ExamType | null>(null);
   const [mode, setMode] = useState<PracticeMode | null>(null);
 
-  useEffect(() => {
-    const preselect = searchParams.get("exam");
-    if (preselect === "DSAT" || preselect === "AP" || preselect === "IELTS") {
-      setExamType(preselect);
-    }
-  }, [searchParams]);
+  const preselect = searchParams.get("exam");
+  const validPreselect = preselect === "DSAT" || preselect === "AP" || preselect === "IELTS" ? preselect : null;
+  useResetOnKeyChange(validPreselect ?? "", () => {
+    if (validPreselect) setExamType(validPreselect);
+  });
 
   // Once the student picks an exam, the rest of this flow (mode picker, domain picker) leans
   // into that exam's color everywhere shared chrome reads --accent-current (see TopNav).

@@ -12,9 +12,9 @@ function computeReadinessScore(errorRates: number[]): number {
   return Math.round((1 - avgError) * 100);
 }
 
-export async function getReadinessReport(examType: ExamType): Promise<ReadinessReport> {
+export async function getReadinessReport(userId: string, examType: ExamType): Promise<ReadinessReport> {
   await simulateLatency(200);
-  const allSkills = await getLatestSkillScores(examType);
+  const allSkills = await getLatestSkillScores(userId, examType);
   const readinessScore = computeReadinessScore(allSkills.map((s) => s.errorRate));
   const weakestSkills = [...allSkills].sort((a, b) => b.errorRate - a.errorRate).slice(0, 5);
   const threshold = READINESS_THRESHOLDS[examType];
@@ -28,6 +28,6 @@ export async function getReadinessReport(examType: ExamType): Promise<ReadinessR
   };
 }
 
-export async function getAllReadinessReports(): Promise<ReadinessReport[]> {
-  return Promise.all(EXAM_TYPES.map((examType) => getReadinessReport(examType)));
+export async function getAllReadinessReports(userId: string): Promise<ReadinessReport[]> {
+  return Promise.all(EXAM_TYPES.map((examType) => getReadinessReport(userId, examType)));
 }
