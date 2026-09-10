@@ -6,6 +6,7 @@ import { containsReasoningLeak } from "./aiTextSafety";
 import { describeAnthropicError } from "./anthropicErrors";
 
 export interface UploadDocumentInput {
+  userId: string;
   fileName: string;
   fileType: string;
   fileSizeBytes: number;
@@ -193,6 +194,7 @@ export async function uploadDocument(input: UploadDocumentInput): Promise<SmartS
 
   const test: SmartStudioTest = {
     id: testId,
+    userId: input.userId,
     fileName: input.fileName,
     fileType: input.fileType,
     fileSizeBytes: input.fileSizeBytes,
@@ -206,14 +208,16 @@ export async function uploadDocument(input: UploadDocumentInput): Promise<SmartS
   return test;
 }
 
-export async function getUserTests(): Promise<SmartStudioTest[]> {
+export async function getUserTests(userId: string): Promise<SmartStudioTest[]> {
   await simulateLatency(250);
-  return [...SMART_STUDIO_TESTS].sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime());
+  return SMART_STUDIO_TESTS.filter((t) => t.userId === userId).sort(
+    (a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime(),
+  );
 }
 
-export async function getTest(id: string): Promise<SmartStudioTest | undefined> {
+export async function getTest(id: string, userId: string): Promise<SmartStudioTest | undefined> {
   await simulateLatency(200);
-  return SMART_STUDIO_TESTS.find((t) => t.id === id);
+  return SMART_STUDIO_TESTS.find((t) => t.id === id && t.userId === userId);
 }
 
 // Grading is a straightforward equality check against the correct answer Claude determined at
@@ -221,10 +225,13 @@ export async function getTest(id: string): Promise<SmartStudioTest | undefined> 
 // generated then, not static mock text.
 export async function gradeSubmission(
   testId: string,
+  userId: string,
   answers: Record<string, string | null>,
 ): Promise<SmartStudioGradedResult> {
   await simulateLatency(900);
-  const test = SMART_STUDIO_TESTS.find((t) => t.id === testId);
+  // Same "Test not found" for a real-but-not-yours id as for a nonexistent one, so ownership
+  // can't be probed by distinguishing a 404 from a 403.
+  const test = SMART_STUDIO_TESTS.find((t) => t.id === testId && t.userId === userId);
   if (!test) throw new Error("Test not found");
 
   const results = test.questions.map((q) => {
@@ -259,9 +266,9 @@ export interface AnswerKeyEntry {
   explanation: string;
 }
 
-export async function getAnswerKey(testId: string): Promise<AnswerKeyEntry[]> {
+export async function getAnswerKey(testId: string, userId: string): Promise<AnswerKeyEntry[]> {
   await simulateLatency(300);
-  const test = SMART_STUDIO_TESTS.find((t) => t.id === testId);
+  const test = SMART_STUDIO_TESTS.find((t) => t.id === testId && t.userId === userId);
   if (!test) throw new Error("Test not found");
 
   return test.questions.map((q, i) => ({

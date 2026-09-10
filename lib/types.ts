@@ -202,6 +202,7 @@ export interface SmartStudioGradedResult {
 /** A user-uploaded test paper (document, photo, or screenshot) processed by Smart Studio. */
 export interface SmartStudioTest {
   id: string;
+  userId: string;
   fileName: string;
   fileType: string;
   fileSizeBytes: number;
@@ -217,6 +218,7 @@ export type UploadedExamSourceType = "document" | "url";
 /** A past test the user uploaded (or pointed to via URL) that was assembled into a full, timed exam. */
 export interface UploadedExam {
   id: string;
+  userId: string;
   examType: ExamType;
   sourceType: UploadedExamSourceType;
   sourceName: string; // file name, or the URL it was extracted from

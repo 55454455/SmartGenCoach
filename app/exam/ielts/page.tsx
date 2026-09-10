@@ -385,10 +385,7 @@ function SpeakingSection() {
               <div className="flex items-center gap-2 text-sm font-medium text-ielts">
                 <CheckCircle2 size={16} aria-hidden="true" /> Response recorded
               </div>
-              {recorder.audioUrl && (
-                // eslint-disable-next-line jsx-a11y/media-has-caption
-                <audio controls src={recorder.audioUrl} className="w-full max-w-xs" />
-              )}
+              {recorder.audioUrl && <audio controls src={recorder.audioUrl} className="w-full max-w-xs" />}
               <Button
                 accent="ielts"
                 onClick={() => {

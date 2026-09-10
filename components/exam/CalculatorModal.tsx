@@ -209,6 +209,13 @@ export function CalculatorModal({ onClose }: CalculatorModalProps) {
   const [angleMode, setAngleMode] = useState<"deg" | "rad">("deg");
   const draggingRef = useRef<{ offsetX: number; offsetY: number } | null>(null);
   const dragAbortRef = useRef<AbortController | null>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  // Move focus into the calculator on open, so a keyboard user who opened it doesn't stay
+  // focused on the trigger button behind it and Tab straight past it into the exam content.
+  useEffect(() => {
+    dialogRef.current?.focus();
+  }, []);
 
   const handlePointerMove = useCallback((event: PointerEvent) => {
     if (!draggingRef.current) return;
@@ -299,6 +306,7 @@ export function CalculatorModal({ onClose }: CalculatorModalProps) {
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.96 }}
       transition={{ duration: 0.15 }}
+      ref={dialogRef}
       role="dialog"
       aria-label="Calculator"
       tabIndex={0}

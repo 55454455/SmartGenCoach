@@ -25,3 +25,7 @@ export const EXAM_META: Record<ExamType, ExamMeta> = {
 };
 
 export const EXAM_TYPES: ExamType[] = ["DSAT", "AP", "IELTS"];
+
+export function isExamType(value: string): value is ExamType {
+  return (EXAM_TYPES as string[]).includes(value);
+}

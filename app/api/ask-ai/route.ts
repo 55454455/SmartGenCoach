@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireSession } from "@/lib/services/apiAuth";
+import { requireRateLimit, requireSession } from "@/lib/services/apiAuth";
 import { askQuestion, type AskAiHistoryMessage } from "@/lib/services/askAiService";
 
 export const maxDuration = 30;
@@ -8,7 +8,15 @@ export async function POST(request: Request) {
   const auth = await requireSession();
   if (auth.response) return auth.response;
 
-  const body = (await request.json()) as { question?: string; history?: AskAiHistoryMessage[] };
+  const limited = requireRateLimit(auth.session.user.id, "ask-ai", 20, 10 * 60 * 1000);
+  if (limited) return limited;
+
+  let body: { question?: string; history?: AskAiHistoryMessage[] };
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
+  }
   if (!body.question || !body.question.trim()) {
     return NextResponse.json({ error: "A question is required." }, { status: 400 });
   }

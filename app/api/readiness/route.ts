@@ -1,13 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireSession } from "@/lib/services/apiAuth";
 import { getAllReadinessReports, getReadinessReport } from "@/lib/services/readinessService";
-import type { ExamType } from "@/lib/types";
-
-const VALID_EXAM_TYPES: ExamType[] = ["DSAT", "AP", "IELTS"];
-
-function isExamType(value: string): value is ExamType {
-  return (VALID_EXAM_TYPES as string[]).includes(value);
-}
+import { isExamType } from "@/lib/examMeta";
 
 // Scoped per-user by session cookie — never cache (see app/api/dashboard/route.ts for why).
 export const dynamic = "force-dynamic";

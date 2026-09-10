@@ -353,6 +353,7 @@ async function extractFromText(examType: ExamType, text: string): Promise<Extrac
 }
 
 function finalizeExam(
+  userId: string,
   examType: ExamType,
   sourceType: "document" | "url",
   sourceName: string,
@@ -399,6 +400,7 @@ function finalizeExam(
 
   const exam: UploadedExam = {
     id: examId,
+    userId,
     examType,
     sourceType,
     sourceName,
@@ -413,6 +415,7 @@ function finalizeExam(
 }
 
 export interface CreateFromDocumentInput {
+  userId: string;
   examType: ExamType;
   fileName: string;
   fileType: string;
@@ -426,10 +429,11 @@ export async function createUploadedExamFromDocument(input: CreateFromDocumentIn
     );
   }
   const extraction = await extractFromDocument(input.examType, input.fileData, input.fileType);
-  return finalizeExam(input.examType, "document", input.fileName, extraction);
+  return finalizeExam(input.userId, input.examType, "document", input.fileName, extraction);
 }
 
 export interface CreateFromUrlInput {
+  userId: string;
   examType: ExamType;
   sourceUrl: string;
 }
@@ -449,14 +453,14 @@ export async function createUploadedExamFromUrl(input: CreateFromUrlInput): Prom
     extraction = await extractFromText(input.examType, text);
   }
 
-  return finalizeExam(input.examType, "url", input.sourceUrl, extraction);
+  return finalizeExam(input.userId, input.examType, "url", input.sourceUrl, extraction);
 }
 
-export async function getUploadedExams(examType?: ExamType): Promise<UploadedExam[]> {
-  const exams = examType ? UPLOADED_EXAMS.filter((e) => e.examType === examType) : UPLOADED_EXAMS;
-  return [...exams].sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime());
+export async function getUploadedExams(userId: string, examType?: ExamType): Promise<UploadedExam[]> {
+  const exams = UPLOADED_EXAMS.filter((e) => e.userId === userId && (!examType || e.examType === examType));
+  return exams.sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime());
 }
 
-export async function getUploadedExam(id: string): Promise<UploadedExam | undefined> {
-  return UPLOADED_EXAMS.find((e) => e.id === id);
+export async function getUploadedExam(id: string, userId: string): Promise<UploadedExam | undefined> {
+  return UPLOADED_EXAMS.find((e) => e.id === id && e.userId === userId);
 }

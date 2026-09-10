@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireSession } from "@/lib/services/apiAuth";
+import { requireRateLimit, requireSession } from "@/lib/services/apiAuth";
 import { getIeltsListeningBundle, getIeltsSpeakingPrompts, getQuestionsByDomain } from "@/lib/services/examService";
 import type { IeltsDomain } from "@/lib/types";
 
@@ -24,6 +24,9 @@ export async function GET(request: Request) {
   if (!isIeltsDomain(section)) {
     return NextResponse.json({ error: "Invalid section." }, { status: 400 });
   }
+
+  const limited = requireRateLimit(auth.session.user.id, "exam-ielts", 10, 10 * 60 * 1000);
+  if (limited) return limited;
 
   try {
     if (section === "Listening") {

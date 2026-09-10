@@ -3,7 +3,12 @@ import { login } from "@/lib/services/authService";
 import type { LoginCredentials } from "@/lib/types";
 
 export async function POST(request: Request) {
-  const body = (await request.json()) as Partial<LoginCredentials>;
+  let body: Partial<LoginCredentials>;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
+  }
   if (!body.email || !body.password) {
     return NextResponse.json({ error: "Email and password are required." }, { status: 400 });
   }

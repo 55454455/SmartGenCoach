@@ -76,6 +76,14 @@ export async function register(input: RegisterInput): Promise<AuthSession> {
     throw new Error(NETWORK_ERROR_MESSAGE);
   }
   if (error) {
+    // "This email is already registered" would let an attacker enumerate which emails have
+    // accounts here — respond exactly like the real "check your inbox" success case below so the
+    // two are indistinguishable from outside. Every other signUp error (weak password, invalid
+    // email format, ...) is genuine user-actionable validation feedback Supabase authored for
+    // exactly this purpose, so it's safe to surface as-is.
+    if (error.code === "user_already_exists") {
+      throw new Error("Check your inbox to confirm your email, then sign in.");
+    }
     throw new Error(error.message);
   }
   if (!data.session || !data.user) {

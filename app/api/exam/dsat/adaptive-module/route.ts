@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireSession } from "@/lib/services/apiAuth";
+import { requireRateLimit, requireSession } from "@/lib/services/apiAuth";
 import { getAdaptiveDsatModule2 } from "@/lib/services/examService";
 
 // Real Claude call (thinking + up to 3 retries) generating Module 2's questions on the fly, once
@@ -17,7 +17,15 @@ export async function POST(request: Request) {
   const auth = await requireSession();
   if (auth.response) return auth.response;
 
-  const body = (await request.json()) as AdaptiveModuleRequestBody;
+  const limited = requireRateLimit(auth.session.user.id, "exam-dsat-adaptive-module", 10, 10 * 60 * 1000);
+  if (limited) return limited;
+
+  let body: AdaptiveModuleRequestBody;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
+  }
   if (body.domain !== "Math" && body.domain !== "Reading and Writing") {
     return NextResponse.json({ error: "domain must be \"Math\" or \"Reading and Writing\"." }, { status: 400 });
   }

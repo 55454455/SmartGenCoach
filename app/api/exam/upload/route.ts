@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { requireSession } from "@/lib/services/apiAuth";
+import { requireRateLimit, requireSession } from "@/lib/services/apiAuth";
 import {
   createUploadedExamFromDocument,
   createUploadedExamFromUrl,
   getUploadedExams,
 } from "@/lib/services/uploadedExamService";
-import type { ExamType } from "@/lib/types";
+import { isExamType } from "@/lib/examMeta";
 
 // Extraction runs a real Claude call (with thinking + up to 3 retries) against an uploaded
 // PDF/image and can take well past Vercel's default serverless timeout (10s on Hobby). Raise it
@@ -17,8 +17,9 @@ export async function GET(request: Request) {
   const auth = await requireSession();
   if (auth.response) return auth.response;
 
-  const examType = new URL(request.url).searchParams.get("examType") as ExamType | null;
-  const exams = await getUploadedExams(examType ?? undefined);
+  const requestedType = new URL(request.url).searchParams.get("examType");
+  const examType = requestedType && isExamType(requestedType) ? requestedType : undefined;
+  const exams = await getUploadedExams(auth.session.user.id, examType);
   return NextResponse.json(exams);
 }
 
@@ -27,11 +28,15 @@ export async function POST(request: Request) {
   if (auth.response) return auth.response;
 
   const formData = await request.formData();
-  const examType = formData.get("examType") as ExamType | null;
+  const requestedType = formData.get("examType");
   const sourceType = formData.get("sourceType");
-  if (!examType || (sourceType !== "document" && sourceType !== "url")) {
-    return NextResponse.json({ error: "examType and sourceType are required." }, { status: 400 });
+  if (typeof requestedType !== "string" || !isExamType(requestedType) || (sourceType !== "document" && sourceType !== "url")) {
+    return NextResponse.json({ error: "A valid examType and sourceType are required." }, { status: 400 });
   }
+  const examType = requestedType;
+
+  const limited = requireRateLimit(auth.session.user.id, "exam-upload", 10, 10 * 60 * 1000);
+  if (limited) return limited;
 
   try {
     if (sourceType === "document") {
@@ -41,6 +46,7 @@ export async function POST(request: Request) {
       }
       const buffer = Buffer.from(await file.arrayBuffer());
       const exam = await createUploadedExamFromDocument({
+        userId: auth.session.user.id,
         examType,
         fileName: file.name,
         fileType: file.type,
@@ -53,7 +59,7 @@ export async function POST(request: Request) {
     if (typeof sourceUrl !== "string" || !sourceUrl.trim()) {
       return NextResponse.json({ error: "A URL is required." }, { status: 400 });
     }
-    const exam = await createUploadedExamFromUrl({ examType, sourceUrl: sourceUrl.trim() });
+    const exam = await createUploadedExamFromUrl({ userId: auth.session.user.id, examType, sourceUrl: sourceUrl.trim() });
     return NextResponse.json(exam);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Could not build an exam from that source.";

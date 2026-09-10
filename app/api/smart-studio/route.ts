@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireSession } from "@/lib/services/apiAuth";
+import { requireRateLimit, requireSession } from "@/lib/services/apiAuth";
 import { getUserTests, uploadDocument } from "@/lib/services/smartStudioService";
 
 // Same reasoning as app/api/exam/upload/route.ts — document extraction is a real, potentially
@@ -10,13 +10,16 @@ export async function GET() {
   const auth = await requireSession();
   if (auth.response) return auth.response;
 
-  const tests = await getUserTests();
+  const tests = await getUserTests(auth.session.user.id);
   return NextResponse.json(tests);
 }
 
 export async function POST(request: Request) {
   const auth = await requireSession();
   if (auth.response) return auth.response;
+
+  const limited = requireRateLimit(auth.session.user.id, "smart-studio-upload", 10, 10 * 60 * 1000);
+  if (limited) return limited;
 
   const formData = await request.formData();
   const file = formData.get("file");
@@ -27,6 +30,7 @@ export async function POST(request: Request) {
   try {
     const buffer = Buffer.from(await file.arrayBuffer());
     const test = await uploadDocument({
+      userId: auth.session.user.id,
       fileName: file.name,
       fileType: file.type,
       fileSizeBytes: file.size,

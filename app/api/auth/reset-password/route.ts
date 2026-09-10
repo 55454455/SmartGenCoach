@@ -6,7 +6,12 @@ export async function POST(request: Request) {
   const auth = await requireSession();
   if (auth.response) return auth.response;
 
-  const body = (await request.json()) as { password?: string };
+  let body: { password?: string };
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
+  }
   if (!body.password || body.password.length < 6) {
     return NextResponse.json({ error: "Password must be at least 6 characters." }, { status: 400 });
   }
