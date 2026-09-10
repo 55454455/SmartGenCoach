@@ -74,6 +74,11 @@ migrations directory — see `docs/runbooks/apply-lets-play-schema.md` for the e
 3. `supabase/admin_schema.sql` — the `admin_list_profiles()` RPC backing the real admin user
    directory. Safe to re-run (`create or replace function`).
 
+A fresh `supabase/schema.sql` run already includes the self-promotion RLS fix (see limitation #7
+below). If your project was set up **before** that fix was added to this file, apply it separately
+via `docs/runbooks/apply-profiles-rls-fix.md` — a plain re-run of `schema.sql` also works since its
+policy statements are idempotent (`drop policy if exists` + `create policy`).
+
 To make a user an admin (there's no self-service UI for this — `role` is deliberately not settable
 by a signed-up user, see limitation #7 below): `update public.profiles set role = 'admin' where
 email = '...';` in the SQL Editor.
@@ -154,15 +159,45 @@ found; the fix approach is worth understanding since it shapes how new routes/pa
    `finishExam()`) doesn't write anywhere — it's a static "Exam Submitted" placeholder. Nothing
    feeds real data into readiness scoring, the dashboard, or the admin directory's per-user scores
    yet; `EXAM_ATTEMPTS` in `lib/mockData.ts` is the only source, and it's fixed demo content.
-7. **`profiles` RLS allows self-promotion to admin.** The `"Users can update their own profile"`
-   policy in `supabase/schema.sql` has no column restriction, so any logged-in user can currently
+7. ~~`profiles` RLS allowed self-promotion to admin~~ **Fixed.** The `"Users can update their own
+   profile"` policy in `supabase/schema.sql` had no column restriction, so any logged-in user could
    run `supabase.from('profiles').update({role:'admin'}).eq('id', auth.uid())` from the browser
-   console and grant themselves admin. Needs either a narrower RLS policy (exclude `role` from
-   self-service updates) or a trigger that rejects a caller changing their own `role`.
+   console and grant themselves admin. Fixed with a `with check` clause that pins `role` to its
+   pre-statement value, so a self-update can still change `name`/`avatar_initials`/`target_exams`/
+   `target_scores` but is rejected outright if it also tries to change `role`. **This fix lives in
+   `supabase/schema.sql` and must be applied by hand to any already-deployed project** — see
+   `docs/runbooks/apply-profiles-rls-fix.md`, including how to check for and demote any account
+   that already exploited this before the fix was applied.
 8. **No automated tests and no CI.** No test runner is configured (`package.json` has no `test`
    script) and there's no `.github/workflows`. Verification today is manual (`npm run lint`,
    `tsc --noEmit`, `npm run build`, and hand-testing) — this is exactly how the gaps above were
    found and how each fix was verified.
+9. ~~Smart Studio and Upload Exam leaked every user's data to every other user~~ **Fixed.**
+   `smartStudioService.ts` and `uploadedExamService.ts` store uploads in a plain in-memory array
+   (Phase 1 has no real file storage/DB — see the `PHASE2` comment above each) but had **no
+   `userId` scoping at all**: `getUserTests()`/`getTest()`/`gradeSubmission()`/`getAnswerKey()` and
+   `getUploadedExams()`/`getUploadedExam()` all read from the shared array with no ownership check,
+   so any authenticated user could list, read, and grade any other user's uploaded test or exam by
+   ID (IDs are guessable timestamps: `sst-${Date.now()}-${rand}`). Fixed by adding a `userId` field
+   to `SmartStudioTest`/`UploadedExam`, set from the authenticated session at upload time, and
+   filtering every getter by it — a request for another user's id now returns the same "not found"
+   response as a nonexistent one, so ownership can't be probed via a 403-vs-404 distinction.
+10. ~~No rate limiting on any AI-generation endpoint~~ **Fixed.** Every route that calls the
+    Anthropic API (`ask-ai`, `exam/dsat`, `exam/ap`, `exam/ielts`, `exam/dsat/adaptive-module`,
+    `exam/questions`, `killing-questions`, `smart-studio`, `exam/upload`) now calls
+    `requireRateLimit()` (`lib/services/apiAuth.ts`) right after `requireSession()`, backed by an
+    in-memory per-user-per-route fixed-window limiter (`lib/services/rateLimiter.ts`). This is
+    **best-effort and per-server-instance** — on a multi-instance serverless deployment each
+    instance enforces its own independent quota, so the effective limit scales with live instance
+    count. Good enough to blunt casual abuse/runaway client loops without adding an external
+    dependency; swap for a shared-store limiter (Upstash/Redis) if real abuse is observed. The
+    public, unauthenticated `/api/auth/forgot-password` (email-sending) is separately limited by
+    IP for the same reason.
+11. **Dependency CVEs patched.** `npm audit` found a critical unauthenticated-RCE advisory in
+    Next.js (plus bundled `postcss`/`sharp` CVEs) and a high-severity `nanoid` issue. Fixed by
+    bumping the pinned `next`/`eslint-config-next` versions from `16.2.11` to `16.3.4` and running
+    `npm audit fix`; `npm audit --production` now reports 0 vulnerabilities. Re-run `npm audit`
+    periodically — this is a point-in-time fix, not a standing guarantee.
 
 What "end-to-end" did and didn't cover in this pass: without real Supabase/Anthropic credentials,
 protected pages correctly redirect to `/login` (verified with placeholder Supabase env vars — an
@@ -180,25 +215,27 @@ Roughly in priority order:
 
 1. **Add a `.env.example`** listing `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and
    `ANTHROPIC_API_KEY` — right now a new contributor has to read source to discover them.
-2. **Rate-limit or budget-cap the Claude-backed endpoints.** The auth gap is closed, but any
-   authenticated user could still reload a full-exam page in a loop and generate an unbounded
-   number of paid API calls.
-3. **Cache generated questions** — persist a freshly generated DSAT/AP/IELTS set (or Killing
+2. **Cache generated questions** — persist a freshly generated DSAT/AP/IELTS set (or Killing
    Questions batch) against its inputs (exam type, domain, difficulty, skill slots) so retries,
    page refreshes, and repeated practice of the same skill don't re-spend a Claude call for
    content that's already been generated.
-4. **Add a test suite.** Given the amount of business logic in `lib/services/*` (adaptive
+3. **Add a test suite.** Given the amount of business logic in `lib/services/*` (adaptive
    difficulty, readiness thresholds, Killing Questions targeting, the calculator's expression
    parser) that's independent of the UI, unit tests there would catch regressions cheaply; a
    handful of Playwright smoke tests (login → select exam → answer a question) would cover the
-   auth-gated flows end-to-end — and a unit test on `requireSession()` usage would catch a future
-   route that forgets to call it, which is exactly how items 1–2 above happened in the first place.
-5. **Basic CI** (`.github/workflows`) running `npm run lint`, `tsc --noEmit`, and `npm run build`
-   on every PR — none of the fixes in this pass would have needed a manual dev-server check to
-   catch if that had existed already.
+   auth-gated flows end-to-end — and a unit test on `requireSession()`/`requireRateLimit()` usage
+   would catch a future route that forgets to call one of them, which is exactly how several of the
+   gaps in this file's history happened in the first place.
+4. **Basic CI** (`.github/workflows`) running `npm run lint`, `tsc --noEmit`, `npm run build`, and
+   `npm audit`, on every PR — none of the fixes in this pass would have needed a manual dev-server
+   check or a manually-run `npm audit` to catch if that had existed already.
+5. **Move rate limiting to a shared store** (Upstash Redis or similar) once real usage crosses one
+   server instance — the current in-memory limiter (`lib/services/rateLimiter.ts`) is per-instance,
+   so its effective ceiling scales with live instance count on a multi-instance deployment.
 6. **Finish the `PHASE2` items** flagged throughout `lib/services/*` — most notably real
-   Supabase-backed admin user listing (`adminService.ts`) and swapping `lib/mockData.ts`-backed
-   exam attempts/readiness data for live Supabase queries.
+   Supabase-backed persistence for Smart Studio tests and Upload Exam (both currently in-memory,
+   reset on every cold start) and swapping `lib/mockData.ts`-backed exam attempts/readiness data
+   for live Supabase queries.
 
 ## Learn More
 
