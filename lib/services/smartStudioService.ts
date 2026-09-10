@@ -119,7 +119,7 @@ async function extractQuestionsFromDocument(base64Data: string, mediaType: strin
     let response: Awaited<ReturnType<typeof anthropic.messages.create>>;
     try {
       response = await anthropic.messages.create({
-        model: "claude-sonnet-4-6",
+        model: "claude-sonnet-5",
         max_tokens: 8192,
         thinking: { type: "adaptive" },
         tools: [EXTRACT_QUESTIONS_TOOL],

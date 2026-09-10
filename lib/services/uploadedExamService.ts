@@ -280,7 +280,7 @@ async function extractFromDocument(examType: ExamType, base64Data: string, media
     let response: Awaited<ReturnType<typeof anthropic.messages.create>>;
     try {
       response = await anthropic.messages.create({
-        model: "claude-sonnet-4-6",
+        model: "claude-sonnet-5",
         max_tokens: 8192,
         thinking: { type: "adaptive" },
         tools: [buildExtractTool(examType)],
@@ -319,7 +319,7 @@ async function extractFromText(examType: ExamType, text: string): Promise<Extrac
     let response: Awaited<ReturnType<typeof anthropic.messages.create>>;
     try {
       response = await anthropic.messages.create({
-        model: "claude-sonnet-4-6",
+        model: "claude-sonnet-5",
         max_tokens: 8192,
         thinking: { type: "adaptive" },
         tools: [buildExtractTool(examType)],
