@@ -122,8 +122,30 @@ function buildDsatCallGroups(domain: DsatDomain): DsatCallGroup[] {
 
 async function runDsatCallGroups(groups: DsatCallGroup[], difficulty: Difficulty | "Mixed"): Promise<Question[][]> {
   return mapWithConcurrency(groups, MAX_CONCURRENT_DSAT_GENERATIONS, (group) =>
-    generateExamQuestions({ examType: "DSAT", domain: group.domain, slots: group.slots, difficulty, idPrefix: makeIdPrefix("DSAT", group.domain) }),
+    generateExamQuestions({
+      examType: "DSAT",
+      domain: group.domain,
+      slots: group.slots,
+      difficulty,
+      idPrefix: makeIdPrefix("DSAT", group.domain),
+      // Grid-in ("student-produced response") is a Math-only format on the real Digital SAT.
+      allowGridIn: group.domain === "Math",
+    }),
   );
+}
+
+const DSAT_PRETEST_COUNT_PER_MODULE = 2;
+
+// Real Bluebook embeds 2 unscored "pretest" items per module, indistinguishable to the student
+// from the scored ones, that count toward neither adaptive routing nor the final score. Applied
+// after ordering so marking them doesn't disturb the official block order / easy-to-hard
+// sequencing above — they're tagged in place, never moved or flagged in the UI.
+function markPretestQuestions(questions: Question[]): Question[] {
+  const pretestIndices = new Set<number>();
+  while (pretestIndices.size < Math.min(DSAT_PRETEST_COUNT_PER_MODULE, questions.length)) {
+    pretestIndices.add(Math.floor(Math.random() * questions.length));
+  }
+  return questions.map((q, i) => ({ ...q, scored: !pretestIndices.has(i) }));
 }
 
 // Re-orders a flat set of Reading and Writing questions into College Board's fixed content-domain
@@ -155,7 +177,7 @@ function orderDsatModuleQuestions(domain: DsatDomain, questions: Question[]): Qu
 // flight at once — well under the concurrency cap above.
 async function generateDsatModuleQuestions(domain: DsatDomain, difficulty: Difficulty | "Mixed"): Promise<Question[]> {
   const results = await runDsatCallGroups(buildDsatCallGroups(domain), difficulty);
-  return orderDsatModuleQuestions(domain, results.flat());
+  return markPretestQuestions(orderDsatModuleQuestions(domain, results.flat()));
 }
 
 export interface DsatExamBundle {
@@ -176,8 +198,10 @@ export async function getDsatExamBundle(): Promise<DsatExamBundle> {
   const rwGroups = buildDsatCallGroups("Reading and Writing");
   const mathGroups = buildDsatCallGroups("Math");
   const allResults = await runDsatCallGroups([...rwGroups, ...mathGroups], "Mixed");
-  const rwQuestions = orderDsatModuleQuestions("Reading and Writing", allResults.slice(0, rwGroups.length).flat());
-  const mathQuestions = orderDsatModuleQuestions("Math", allResults.slice(rwGroups.length).flat());
+  const rwQuestions = markPretestQuestions(
+    orderDsatModuleQuestions("Reading and Writing", allResults.slice(0, rwGroups.length).flat()),
+  );
+  const mathQuestions = markPretestQuestions(orderDsatModuleQuestions("Math", allResults.slice(rwGroups.length).flat()));
 
   const questionsById: Record<string, Question> = {};
   for (const q of [...rwQuestions, ...mathQuestions]) questionsById[q.id] = q;
