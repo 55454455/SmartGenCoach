@@ -9,6 +9,11 @@ function isExamType(value: string): value is ExamType {
   return (VALID_EXAM_TYPES as string[]).includes(value);
 }
 
+// Scoped per-user by session cookie — never cache (see app/api/dashboard/route.ts for why).
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+const NO_STORE = { headers: { "Cache-Control": "no-store, no-cache, must-revalidate" } };
+
 // PHASE2: readiness is computed live by the Orchestrator Agent from full attempt history.
 export async function GET(request: Request) {
   const auth = await requireSession();
@@ -20,7 +25,7 @@ export async function GET(request: Request) {
 
   if (!examType) {
     const all = await getAllReadinessReports(userId);
-    return NextResponse.json(all);
+    return NextResponse.json(all, NO_STORE);
   }
 
   if (!isExamType(examType)) {
@@ -28,5 +33,5 @@ export async function GET(request: Request) {
   }
 
   const report = await getReadinessReport(userId, examType);
-  return NextResponse.json(report);
+  return NextResponse.json(report, NO_STORE);
 }
