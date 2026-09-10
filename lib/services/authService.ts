@@ -87,6 +87,33 @@ export async function register(input: RegisterInput): Promise<AuthSession> {
   return toAuthSession(profile, data.session);
 }
 
+// Supabase deliberately doesn't distinguish "no account for this email" from "sent" here (avoids
+// email enumeration), so the only real failure mode this ever surfaces is a network/infra problem.
+export async function requestPasswordReset(email: string, redirectTo: string): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await guardNetwork(supabase.auth.resetPasswordForEmail(email, { redirectTo }));
+  if (isNetworkError(error)) {
+    throw new Error(NETWORK_ERROR_MESSAGE);
+  }
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+// Only works with an authenticated session — either a normal login or the temporary "recovery"
+// session Supabase establishes when the user follows the emailed reset link (see
+// app/(auth)/reset-password/page.tsx, which waits for that session before allowing this call).
+export async function resetPassword(newPassword: string): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await guardNetwork(supabase.auth.updateUser({ password: newPassword }));
+  if (isNetworkError(error)) {
+    throw new Error(NETWORK_ERROR_MESSAGE);
+  }
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
 export async function getCurrentSession(): Promise<AuthSession | null> {
   const supabase = await createClient();
   const {

@@ -65,11 +65,9 @@ function sortByDifficulty(questions: Question[]): Question[] {
   return [...questions].sort((a, b) => DIFFICULTY_RANK[a.difficulty] - DIFFICULTY_RANK[b.difficulty]);
 }
 
-// Bounds how many Claude calls run at once across DSAT generation. Splitting each module into one
-// call per content domain (see below) avoids truncating a 20+ question response, but firing every
-// bucket at once via unbounded Promise.all means a Full Exam load (both sections' Module 1s
-// together) sends 8 simultaneous requests — a real risk of tripping Anthropic's concurrent-request
-// rate limits where 2 never would have. This caps it regardless of how many buckets get queued.
+// Bounds how many Claude calls run at once across DSAT generation — see buildDsatCallGroups for
+// why a Full Exam load only ever produces 4 groups total (so this cap lets them all run in one
+// wave), and why that's an improvement over one call per content domain.
 const MAX_CONCURRENT_DSAT_GENERATIONS = 4;
 
 async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
@@ -86,51 +84,78 @@ async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T)
   return results;
 }
 
-interface DsatBucketRequest {
+interface DsatCallGroup {
   domain: DsatDomain;
-  contentDomain: string;
   slots: SkillSlot[];
 }
 
-function buildDsatBucketRequests(domain: DsatDomain): DsatBucketRequest[] {
-  return DSAT_CONTENT_DOMAIN_TARGETS[domain].map(({ contentDomain, count }) => {
-    const pool = SKILL_CATALOG.filter(
-      (s) => s.examType === "DSAT" && s.domain === domain && s.contentDomain === contentDomain,
-    );
-    const slots: SkillSlot[] = Array.from({ length: count }, (_, i) => {
-      const skill = pool[i % pool.length];
-      return { skillId: skill.skillId, skillName: skill.skillName };
+const DSAT_SKILL_CONTENT_DOMAIN = new Map(
+  SKILL_CATALOG.filter((s): s is typeof s & { contentDomain: string } => s.examType === "DSAT" && Boolean(s.contentDomain)).map((s) => [
+    s.skillId,
+    s.contentDomain,
+  ]),
+);
+
+// Folds College Board's 4 official content domains into 2 Claude calls per module (paired in the
+// order DSAT_CONTENT_DOMAIN_TARGETS lists them) instead of 1 call per content domain. A Full Exam
+// load fires both sections' Module 1s together, so 1-call-per-domain would mean 8 simultaneous
+// requests — a real risk of tripping Anthropic's concurrent-request rate limits where 2 never
+// would have. Pairing keeps it to 4 total (one wave under the concurrency cap above) while each
+// call still stays well under the size that risked truncating a single 20+ question response.
+function buildDsatCallGroups(domain: DsatDomain): DsatCallGroup[] {
+  const targets = DSAT_CONTENT_DOMAIN_TARGETS[domain];
+  const groups: DsatCallGroup[] = [];
+  for (let i = 0; i < targets.length; i += 2) {
+    const slots: SkillSlot[] = targets.slice(i, i + 2).flatMap(({ contentDomain, count }) => {
+      const pool = SKILL_CATALOG.filter(
+        (s) => s.examType === "DSAT" && s.domain === domain && s.contentDomain === contentDomain,
+      );
+      return Array.from({ length: count }, (_, j) => {
+        const skill = pool[j % pool.length];
+        return { skillId: skill.skillId, skillName: skill.skillName };
+      });
     });
-    return { domain, contentDomain, slots };
-  });
+    groups.push({ domain, slots });
+  }
+  return groups;
 }
 
-// Runs a batch of content-domain bucket requests (each becoming one Claude call) through the
-// shared concurrency cap, then orders the result per College Board's published test specs:
-//  - Reading and Writing presents its four content domains as fixed, separate blocks in a set
-//    order (Craft and Structure, Information and Ideas, Standard English Conventions, Expression
-//    of Ideas — the same order DSAT_CONTENT_DOMAIN_TARGETS lists them in), with each block's own
-//    questions sequenced easiest to hardest.
-//  - Math has no domain blocking — content domains are intermixed — but the module as a whole is
-//    still sequenced roughly easiest to hardest.
-async function runDsatBucketRequests(
-  domain: DsatDomain,
-  requests: DsatBucketRequest[],
-  difficulty: Difficulty | "Mixed",
-): Promise<Question[]> {
-  const buckets = await mapWithConcurrency(requests, MAX_CONCURRENT_DSAT_GENERATIONS, (req) =>
-    generateExamQuestions({ examType: "DSAT", domain: req.domain, slots: req.slots, difficulty, idPrefix: makeIdPrefix("DSAT", req.domain) }),
+async function runDsatCallGroups(groups: DsatCallGroup[], difficulty: Difficulty | "Mixed"): Promise<Question[][]> {
+  return mapWithConcurrency(groups, MAX_CONCURRENT_DSAT_GENERATIONS, (group) =>
+    generateExamQuestions({ examType: "DSAT", domain: group.domain, slots: group.slots, difficulty, idPrefix: makeIdPrefix("DSAT", group.domain) }),
   );
-  if (domain === "Reading and Writing") return buckets.flatMap(sortByDifficulty);
-  return sortByDifficulty(buckets.flat());
+}
+
+// Re-orders a flat set of Reading and Writing questions into College Board's fixed content-domain
+// block order (see DSAT_CONTENT_DOMAIN_TARGETS), each block sequenced easiest to hardest — grouped
+// by each question's own skill's content domain, not by which Claude call produced it, since
+// buildDsatCallGroups above combines two content domains into each call.
+function orderReadingWritingQuestions(questions: Question[]): Question[] {
+  const byContentDomain = new Map<string, Question[]>();
+  for (const q of questions) {
+    const cd = DSAT_SKILL_CONTENT_DOMAIN.get(q.skillId) ?? "unknown";
+    const bucket = byContentDomain.get(cd);
+    if (bucket) bucket.push(q);
+    else byContentDomain.set(cd, [q]);
+  }
+  return DSAT_CONTENT_DOMAIN_TARGETS["Reading and Writing"].flatMap(({ contentDomain }) =>
+    sortByDifficulty(byContentDomain.get(contentDomain) ?? []),
+  );
+}
+
+// Math has no content-domain blocking — domains are intermixed — but the module as a whole is
+// still sequenced roughly easiest to hardest.
+function orderDsatModuleQuestions(domain: DsatDomain, questions: Question[]): Question[] {
+  return domain === "Reading and Writing" ? orderReadingWritingQuestions(questions) : sortByDifficulty(questions);
 }
 
 // Generates one DSAT module's full, real Bluebook-count question set (27 for Reading and Writing,
 // 22 for Math), matching College Board's official content-domain mix via DSAT_CONTENT_DOMAIN_TARGETS.
-// Used for a single domain's Module 2 (getAdaptiveDsatModule2), where the 4-bucket concurrency cap
-// above already applies naturally since there's only one domain in flight at a time.
+// Used for a single domain's Module 2 (getAdaptiveDsatModule2), where only 2 groups are ever in
+// flight at once — well under the concurrency cap above.
 async function generateDsatModuleQuestions(domain: DsatDomain, difficulty: Difficulty | "Mixed"): Promise<Question[]> {
-  return runDsatBucketRequests(domain, buildDsatBucketRequests(domain), difficulty);
+  const results = await runDsatCallGroups(buildDsatCallGroups(domain), difficulty);
+  return orderDsatModuleQuestions(domain, results.flat());
 }
 
 export interface DsatExamBundle {
@@ -146,18 +171,13 @@ export interface DsatExamBundle {
 // Module 1 for that domain is scored, so its difficulty can react to that student's own Module 1
 // performance (genuine multistage adaptive testing, not just AI-generated-but-static content).
 export async function getDsatExamBundle(): Promise<DsatExamBundle> {
-  // Both sections' Module 1 buckets share one concurrency-capped pool (rather than each section
-  // running its own independent 4-wide pool via Promise.all, which would still add up to 8
-  // simultaneous calls) — see MAX_CONCURRENT_DSAT_GENERATIONS above.
-  const rwRequests = buildDsatBucketRequests("Reading and Writing");
-  const mathRequests = buildDsatBucketRequests("Math");
-  const allBuckets = await mapWithConcurrency([...rwRequests, ...mathRequests], MAX_CONCURRENT_DSAT_GENERATIONS, (req) =>
-    generateExamQuestions({ examType: "DSAT", domain: req.domain, slots: req.slots, difficulty: "Mixed", idPrefix: makeIdPrefix("DSAT", req.domain) }),
-  );
-  const rwBuckets = allBuckets.slice(0, rwRequests.length);
-  const mathBuckets = allBuckets.slice(rwRequests.length);
-  const rwQuestions = rwBuckets.flatMap(sortByDifficulty);
-  const mathQuestions = sortByDifficulty(mathBuckets.flat());
+  // Both sections' Module 1 groups share one concurrency-capped pool — 2 groups per section, 4
+  // total, all fit in a single wave under MAX_CONCURRENT_DSAT_GENERATIONS.
+  const rwGroups = buildDsatCallGroups("Reading and Writing");
+  const mathGroups = buildDsatCallGroups("Math");
+  const allResults = await runDsatCallGroups([...rwGroups, ...mathGroups], "Mixed");
+  const rwQuestions = orderDsatModuleQuestions("Reading and Writing", allResults.slice(0, rwGroups.length).flat());
+  const mathQuestions = orderDsatModuleQuestions("Math", allResults.slice(rwGroups.length).flat());
 
   const questionsById: Record<string, Question> = {};
   for (const q of [...rwQuestions, ...mathQuestions]) questionsById[q.id] = q;
