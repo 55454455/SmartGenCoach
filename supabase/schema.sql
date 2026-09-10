@@ -18,9 +18,15 @@ create policy "Users can view their own profile"
   on public.profiles for select
   using (auth.uid() = id);
 
+-- `with check` pins the post-update `role` to whatever it already was, so a user can update their
+-- own name/avatar/target_exams/target_scores but cannot self-promote by setting role='admin' (the
+-- subquery reads the pre-statement row, not the in-flight new value, so this can't be bypassed by
+-- also trying to change `role` to its current value in the same statement — any change is rejected).
+drop policy if exists "Users can update their own profile" on public.profiles;
 create policy "Users can update their own profile"
   on public.profiles for update
-  using (auth.uid() = id);
+  using (auth.uid() = id)
+  with check (auth.uid() = id and role = (select p.role from public.profiles p where p.id = auth.uid()));
 
 -- Auto-creates a profiles row whenever someone signs up via supabase.auth.signUp().
 -- "name" is read from the signUp options.data payload (see lib/services/authService.ts).
